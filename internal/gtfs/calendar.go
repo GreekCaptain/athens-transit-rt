@@ -90,6 +90,9 @@ func (f *Feed) PlanningTime(now time.Time) time.Time {
 	return now
 }
 
+// Expired reports whether now lies outside the feed's validity (PlanningTime moves it).
+func (f *Feed) Expired(now time.Time) bool { return !f.PlanningTime(now).Equal(now) }
+
 // ShapesAround returns the shapes of the line's trips whose run, padded as in CandidateTrips,
 // covers the time of day of now on any service day: what may run around now whatever the
 // calendar says (the OASA GTFS puts some weekly variants on the wrong weekday).
@@ -121,18 +124,28 @@ type Candidate struct {
 // start and `after` seconds after the end, covers `now`. Today's and yesterday's service days
 // are both checked, since GTFS times past 24:00 belong to the previous service day.
 func (f *Feed) CandidateTrips(line string, now time.Time, before, after int32) []Candidate {
+	return f.CandidateTripsShifted(line, now, before, after, 0)
+}
+
+// CandidateTripsShifted is CandidateTrips with the calendar of the service day `shift` days
+// away: the trips that run then, at today's times (Candidate.Day stays today's service day).
+func (f *Feed) CandidateTripsShifted(line string, now time.Time, before, after int32, shift int) []Candidate {
 	var out []Candidate
 	today := ServiceDay(now)
 	for _, day := range []time.Time{today, ServiceDay(dayDate(today).Add(-24 * time.Hour))} {
 		first := len(out)
 		secs := int32(now.Sub(day) / time.Second)
+		calendar := day
+		if shift != 0 {
+			calendar = ServiceDay(dayDate(day).AddDate(0, 0, shift))
+		}
 		for _, ti := range f.byStart[line] {
 			t := &f.Trips[ti]
 			start := f.Start(t)
 			if start-before > secs {
 				break // sorted by start
 			}
-			if secs <= f.End(t)+after && f.ServiceActive(t.Service, day) {
+			if secs <= f.End(t)+after && f.ServiceActive(t.Service, calendar) {
 				out = append(out, Candidate{Trip: ti, Day: day})
 			}
 		}

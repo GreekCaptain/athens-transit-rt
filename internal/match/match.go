@@ -275,11 +275,8 @@ func (m *Matcher) baseCandidates(line string, r *Result) []candidate {
 	prev, hasPrev := m.previous[r.VehicleID]
 	onLine := map[*geo.Polyline][]geo.Cand{}
 	var out []candidate
-	for _, ct := range f.CandidateTrips(line, r.Time, CandidateBefore, CandidateAfter) {
+	for _, ct := range m.shapeCandidates(line, r.Time, shapes) {
 		t := f.Trip(ct.Trip)
-		if !shapes[t.Shape] {
-			continue
-		}
 		g := m.Geometry(t)
 		if g == nil {
 			continue
@@ -306,6 +303,36 @@ func (m *Matcher) baseCandidates(line string, r *Result) []candidate {
 			delay: s.delay, nextIndex: s.nextIndex, waiting: s.waiting, progress: s.progress, along: s.along, sticky: sticky})
 	}
 	return out
+}
+
+// weekdayShifts is the order in which an expired feed tries other weekdays: nearest first.
+var weekdayShifts = []int{1, -1, 2, -2, 3, -3}
+
+// shapeCandidates returns the candidate trips around ts whose shape is in shapes. When the
+// feed has expired and none runs on today's weekday, it takes them from the nearest weekday
+// that has some: OASA changes which weekdays run a variant, and an expired feed cannot follow
+// (rt#51: 309Β runs shape 5863 only Wed-Fri in the 2026-07-08 feed, but also on Tuesdays).
+func (m *Matcher) shapeCandidates(line string, ts time.Time, shapes map[int32]bool) []gtfs.Candidate {
+	f := m.Feed
+	keep := func(cts []gtfs.Candidate) []gtfs.Candidate {
+		out := cts[:0]
+		for _, ct := range cts {
+			if shapes[f.Trip(ct.Trip).Shape] {
+				out = append(out, ct)
+			}
+		}
+		return out
+	}
+	cts := keep(f.CandidateTrips(line, ts, CandidateBefore, CandidateAfter))
+	if len(cts) > 0 || len(shapes) == 0 || !f.Expired(ts) {
+		return cts
+	}
+	for _, shift := range weekdayShifts {
+		if cts = keep(f.CandidateTripsShifted(line, ts, CandidateBefore, CandidateAfter, shift)); len(cts) > 0 {
+			return cts
+		}
+	}
+	return nil
 }
 
 type scored struct {

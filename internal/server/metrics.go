@@ -31,6 +31,7 @@ type Metrics struct {
 	HistoryRows       int64            `json:"history_rows"`    // fixes written since start (fix history on)
 	HistoryDropped    int64            `json:"history_dropped"` // fixes dropped: the writer fell behind
 	HistoryLost       int64            `json:"history_lost"`    // fixes a disk error lost
+	Unmatched         int              `json:"unmatched"`       // vehicles without a trip, all lines
 	Lines             []MetricsLine    `json:"lines"`
 }
 
@@ -42,6 +43,8 @@ type MetricsLine struct {
 	LastPollAt int64  `json:"last_poll_at"` // start of the last poll, 0 = never
 	UpdatedAt  int64  `json:"updated_at"`   // last published data, 0 = none
 	Polling    bool   `json:"polling"`
+	Vehicles   int    `json:"vehicles"`  // in the last published poll
+	Unmatched  int    `json:"unmatched"` // of those, without a trip (rt#51)
 }
 
 func (a *App) Metrics() Metrics {
@@ -72,6 +75,13 @@ func (a *App) Metrics() Metrics {
 			NextDue: unixOrZero(l.NextDue), LastPollAt: unixOrZero(l.LastStart), Polling: l.Polling}
 		if d := a.lines[l.ID]; d != nil {
 			ml.UpdatedAt = d.updated.Unix()
+			ml.Vehicles = len(d.results)
+			for i := range d.results {
+				if !d.results[i].Matched() {
+					ml.Unmatched++
+				}
+			}
+			m.Unmatched += ml.Unmatched
 		}
 		m.Lines = append(m.Lines, ml)
 	}

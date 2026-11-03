@@ -311,6 +311,23 @@ func TestMetricsLocalOnly(t *testing.T) {
 	if l == nil || l.Tier != "watched" || l.IntervalS != 30 {
 		t.Fatalf("line L %+v", l)
 	}
+	// Vehicles and unmatched vehicles of the last published poll (rt#51).
+	a.mu.Lock()
+	a.lines["L"] = &lineData{updated: monday1020, results: []match.Result{
+		{VehicleID: "a", Trip: 0}, {VehicleID: "b", Trip: -1}, {VehicleID: "c", Trip: -1}}}
+	a.mu.Unlock()
+	rec = httptest.NewRecorder()
+	a.MetricsHandler().ServeHTTP(rec, req)
+	m = Metrics{}
+	json.Unmarshal(rec.Body.Bytes(), &m)
+	for _, ml := range m.Lines {
+		if ml.ID == "L" && (ml.Vehicles != 3 || ml.Unmatched != 2) {
+			t.Fatalf("line L vehicles %d unmatched %d", ml.Vehicles, ml.Unmatched)
+		}
+	}
+	if m.Unmatched != 2 {
+		t.Fatalf("unmatched total %d", m.Unmatched)
+	}
 	rec = httptest.NewRecorder()
 	req.RemoteAddr = "203.0.113.9:5555"
 	a.MetricsHandler().ServeHTTP(rec, req)
