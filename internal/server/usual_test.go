@@ -119,7 +119,7 @@ func TestBuildUsual(t *testing.T) {
 			files[h] = &strings.Builder{}
 			files[h].WriteString(history.Header)
 		}
-		fmt.Fprintf(files[h], "%d,L,SH,%s,37980000,23720000,%s,%s,%s,%d,0\n", at.Unix(), veh, feed, trip, shape, s)
+		fmt.Fprintf(files[h], "%d,L,SH,%s,37980000,23720000,%s,%s,%s,%d,0,,\n", at.Unix(), veh, feed, trip, shape, s)
 	}
 	for at := time.Date(2026, 10, 2, 4, 0, 0, 0, gtfs.Athens); at.Before(time.Date(2026, 10, 3, 4, 0, 0, 0, gtfs.Athens)); at = at.Add(time.Minute) {
 		add(at, "alive", "", "", -1)

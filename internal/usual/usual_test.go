@@ -98,7 +98,7 @@ func writeFixes(t *testing.T, dir string, fixes []fix) {
 		if x.trip == "" {
 			shape = ""
 		}
-		fmt.Fprintf(b, "%d,040,RC,%s,37980000,23720000,%s,%s,%s,%d,0\n", x.t.Unix(), x.veh, feed, x.trip, shape, x.s)
+		fmt.Fprintf(b, "%d,040,RC,%s,37980000,23720000,%s,%s,%s,%d,0,,\n", x.t.Unix(), x.veh, feed, x.trip, shape, x.s)
 	}
 	for _, h := range order {
 		f, err := os.Create(filepath.Join(dir, h+".csv.gz"))
@@ -551,5 +551,79 @@ func TestQueryDamagedBlockIsNotADayWithoutBuses(t *testing.T) {
 	r := only(t, s.Query("A", query))
 	if r.NextAt == nil || r.Days != 3 {
 		t.Errorf("row %+v, want a time from the 3 readable days", r)
+	}
+}
+
+// The history holds both file formats for 30 days after rt#73: hours before the deploy have
+// the 11-column header, later ones 13 columns, and the deploy hour has both (hour.csv.gz
+// sealed with the old header, hour.1.csv.gz with the new). Each file is read by its own
+// header; a crossing whose two fixes sit in different formats still counts.
+func TestBuildDayReadsOldAndNewHeaders(t *testing.T) {
+	day := date(2026, 11, 4)
+	dir := t.TempDir()
+	const oldHeader = "fix_t,line,route_code,veh,lat,lon,gtfs,trip_id,shape_id,s_m,delay_s\n"
+	write := func(name, header string, rows []fix, extra string) {
+		var b strings.Builder
+		b.WriteString(header)
+		for _, x := range rows {
+			shape := "S1"
+			if x.trip == "" {
+				shape = ""
+			}
+			fmt.Fprintf(&b, "%d,040,RC,%s,37980000,23720000,%s,%s,%s,%d,0%s\n", x.t.Unix(), x.veh, testFeed, x.trip, shape, x.s, extra)
+		}
+		f, err := os.Create(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		zw := gzip.NewWriter(f)
+		zw.Write([]byte(b.String()))
+		zw.Close()
+		f.Close()
+	}
+	// Keep-alive rows in every hour, old format before 08:00 local, new after.
+	all := keepAlive(at(day, 4, 0), at(day, 28, 0))
+	byFile := map[string][]fix{}
+	for _, x := range all {
+		name := x.t.UTC().Format("2006-01-02T15") + ".csv.gz"
+		if !x.t.Before(at(day, 8, 0)) {
+			name = x.t.UTC().Format("2006-01-02T15") + ".1.csv.gz" // new header, same hour as the last old one
+			if x.t.UTC().Hour() != at(day, 7, 0).UTC().Hour() {
+				name = x.t.UTC().Format("2006-01-02T15") + ".csv.gz"
+			}
+		}
+		byFile[name] = append(byFile[name], x)
+	}
+	// v1 crosses A (3000 m) between 07:59:50 (old file) and 08:00:10 (new file); v2 crosses A
+	// and B (5000 m) wholly in an old file, v3 wholly in a new one.
+	oldName := at(day, 7, 0).UTC().Format("2006-01-02T15") + ".csv.gz"
+	newSame := at(day, 7, 0).UTC().Format("2006-01-02T15") + ".1.csv.gz"
+	byFile[oldName] = append(byFile[oldName],
+		fix{at(day, 7, 50), "v1", "T1", 100, ""}, fix{at(day, 7, 59).Add(50 * time.Second), "v1", "T1", 2900, ""},
+		fix{at(day, 7, 0), "v2", "T1", 100, ""}, fix{at(day, 7, 9), "v2", "T1", 4900, ""}, fix{at(day, 7, 10), "v2", "T1", 5100, ""})
+	byFile[newSame] = append(byFile[newSame], fix{at(day, 8, 0).Add(10 * time.Second), "v1", "T1", 3100, ""})
+	newName := at(day, 9, 0).UTC().Format("2006-01-02T15") + ".csv.gz"
+	byFile[newName] = append(byFile[newName],
+		fix{at(day, 9, 0), "v3", "T1", 100, ""}, fix{at(day, 9, 9), "v3", "T1", 4900, ""}, fix{at(day, 9, 10), "v3", "T1", 5100, ""})
+	for name, rows := range byFile {
+		sort.Slice(rows, func(i, j int) bool { return rows[i].t.Before(rows[j].t) })
+		if strings.HasSuffix(name, ".1.csv.gz") || !rows[0].t.Before(at(day, 8, 0)) {
+			write(name, history.Header, rows, ",,")
+		} else {
+			write(name, oldHeader, rows, "")
+		}
+	}
+	d, err := BuildDay(dir, day, testFeed, fakeRoutes{})
+	if err != nil || d == nil {
+		t.Fatalf("BuildDay: %v %v", d, err)
+	}
+	got := strings.Join(passesOf(d), "; ")
+	want := "A 040 Πειραιάς 07:05:26; B 040 Πειραιάς 07:09:30; A 040 Πειραιάς 08:00:00; " +
+		"A 040 Πειραιάς 09:05:26; B 040 Πειραιάς 09:09:30"
+	if got != want {
+		t.Errorf("passes:\n got %s\nwant %s", got, want)
+	}
+	if len(d.Outages) != 0 {
+		t.Errorf("outages %v: a file format was not read", d.Outages)
 	}
 }
