@@ -50,14 +50,17 @@ Steady (one service day), estimates that the phase 2 benchmark must confirm:
 | Stop grid for the 1000 m access search (cells of ~500 m) | < 0.3 MB |
 | **Total** | **≈ 10 MB** |
 
-- A rebuild makes a new timetable and swaps it with `atomic.Pointer`: the peak is 2 × steady,
-  ≈ 20 MB, for a few seconds once a day.
+- A rebuild makes a new timetable and swaps it with `atomic.Pointer`. During the build the old
+  timetable, the `Input` (one struct per trip with its stop times: ~740k × 12 B ≈ 9 MB plus
+  ids) and the build scratch (grouping maps, the transfer grid) live together: estimate
+  ≈ 30 MB peak for a few seconds. The adapters may hand the input route by route to cut it.
 - Per query: labels for K = 5 rounds × 8.2k stops (arrival int32 + back pointer 8 B) ≈ 0.5 MB,
   plus the marked-stop bitsets. Taken from a `sync.Pool`.
 - At most 2 plans run at once (a semaphore); a request waits up to 2 s for a slot, then gets
   `429 busy`. So the worst query memory is ≈ 1 MB.
-- Acceptance (phase 2, on the mini PC, weekday timetable): steady heap growth ≤ 20 MB, build
-  ≤ 2 s, `last=true` p95 ≤ 150 ms, `last=false` p95 ≤ 100 ms. If the heap is over budget,
+- Acceptance (phase 2, on the mini PC, weekday timetable): steady heap growth ≤ 20 MB; peak
+  heap growth ≤ 40 MB, sampled (`runtime/metrics`, every 10 ms) during a build with 2 queries
+  running; build ≤ 2 s; `last=true` p95 ≤ 150 ms, `last=false` p95 ≤ 100 ms. If the heap is over budget,
   the first cut is the transfers (lower the radius to 400 m), then int16 times relative to the
   route's first departure.
 
@@ -73,14 +76,23 @@ type Input struct {
 }
 ```
 
-Times are seconds after midnight of the service day (past 24 h after midnight). The three
-adapters in `internal/server` fill the input from what they already hold:
+Times are seconds from the service day's GTFS reference ("noon minus 12 h" of day D, as
+`gtfs.ServiceDay`), so they pass 24 h after midnight and stay right on DST days. The planner's
+window is [D 03:00, D+1 03:00) by first departure, but the native calendars differ: OASA's GTFS
+and STASY use calendar service dates with times past 24 h, the suburban boards are per calendar
+date. So each adapter takes the native dates that can have a run starting in the window,
+shifts each trip's times by (native date − D) days, and keeps the trips whose first departure
+is in the window. Each trip keeps its native date in its Run id (§3).
 
-- `oasa`: GTFS trips active on the day while the GTFS is current; else `dailyRuns` of every
-  line with a cached daily schedule (`dailyCached`; no fetch). Run ids as §3.
-- `stasy`: the timetable's trips of the day (same-weekday stand-in when expired).
-- `proastiakos`: the cached day board's runs (`board` with the existing 10-min cache; the
-  planner never forces a fetch).
+- `oasa`: while the GTFS is current, trips active on D (all their times) and on D+1 (only those
+  starting before 03:00). On an expired GTFS, `dailyRuns` of every line
+  with a cached daily schedule of D (`dailyCached`, never a fetch): OASA's daily schedule
+  already counts 03:00 to 03:00, with small-hours runs as "24:15".
+- `stasy`: trips of the timetable dates of D and D+1 (`timetableDate`, same-weekday stand-in
+  when expired), shifted and filtered as above.
+- `proastiakos`: the boards of D and D+1 only when already cached, through a new accessor
+  `CachedBoard(date)` that reads `cachedBoard` / `staleBoard` and never fetches (the existing
+  `board` may fetch, so the planner must not call it).
 
 Steps:
 
@@ -91,31 +103,47 @@ Steps:
    trip it does not overtake at any stop, else to a new sub-route.
 2. **Transfers.** A grid of ~500 m cells; for each stop, the stops within 500 m in its cell and
    the 8 neighbours. Time = ceil(distance × 1.3 / 1.2) + 60 s (+120 s per metro or suburban end).
-   A stop to itself: 60 s (change at the same stop). Stored as CSR.
+   A stop to itself: 60 s, or 180 s at a metro or suburban stop (60 s + 120 s once). Stored as
+   CSR.
 3. **Indices**: routes per stop (CSR), the grid for access and egress.
 
-When: at start once the Sources have loaded; then after 03:00 when the prefetch round of the
-new day ends (and at 04:30 in any case, with what is cached); and when the STASY feed or the
-suburban board of the day changes. A build that fails keeps the old timetable. The planner
+When (all local events; a build never calls an upstream): at start once the Sources have
+loaded; after 03:00 when the prefetch round of the new day ends (and at 04:30 in any case,
+with what is cached); and, at most once per 10 min, when any input changed: a new OASA GTFS
+snapshot, a line's daily schedule cached after the round (an on-demand retry of a failed
+line), a new STASY feed, a suburban board of D or D+1 newly cached. A build that fails keeps
+the old timetable. The planner
 serves the service day of its timetable; after 03:00 and before the new build, a request gets
 the new `service_day` only once the build is done (until then the old day, whose late runs are
 over, gives few or no options; the response says which `service_day` it used).
 
 ## Search
 
-Access: the stops within 1000 m of `from` (at most the nearest 60), each with its walk time
-(+120 s at a metro or suburban stop). Egress: the same around `to`.
+Access: every stop within 1000 m of `from`, each with its walk time (+120 s at a metro or
+suburban stop); about 150 in the centre, which RAPTOR seeds in one pass. Egress: the same
+around `to`.
 
-- `last=false`: rRAPTOR over the departure times at the access stops in [`after`, `after` +
-  3 h], from the latest down. Each RAPTOR run starts from the access stops at time τ + walk;
+- Departure times: for each access stop s with walk w(s) and each trip departure d at s,
+  the origin time is τ = d − w(s). Only τ ≥ `after` is used (the filter is on τ, not on d:
+  a 10:00 departure 10 min away is reachable from `after` = 09:50).
+- `last=false`: rRAPTOR over the distinct τ in [`after`, `after` + 3 h], from the latest
+  down. Each RAPTOR run starts from the access stops at time τ + w(s);
   the labels of the previous (later) run stay as upper bounds. A journey is kept when no
   journey that leaves later arrives at `to` no later with no more transfers. At the end the
   `n` journeys that leave first are returned.
-- `last=true`: the same, but the departure times run from the end of the service day's
-  timetable down to `after`, and the search stops once `n` journeys are kept.
+- `last=true`: the same, but τ runs from the latest one of the service day down to `after`.
+  The search stops after the τ at which `n` journeys are kept: that τ is finished first, all
+  its journeys go through the dominance rule and the sort, then the list is cut to `n`.
 - Rounds: K = 4 rides. Target pruning: a label later than the best arrival at `to` for that
   round is dropped.
-- Ties: equal (departure, arrival, transfers): less walking wins, then fewer hops.
+- Ties: plain RAPTOR keeps one arrival label per stop and round, so at equal (departure,
+  arrival, transfers) the returned journey is the first one found; the contract does not
+  promise the one with less walking. (A walking criterion would need McRAPTOR bags: more
+  memory and time for little gain on the evening question.)
+- Run ids: OASA daily runs of D stay valid for `/v2/runs/{id}` until 03:00 of D+1. Today
+  `dailyRun` (`internal/server/v2_oasa.go`) checks the id's date against the calendar day and
+  reads the daily cache of `Midnight(now)`; phase 2 makes it accept D between 00:00 and 03:00
+  of D+1 (the cache entry of D is still there: the prefetch replaces it after 03:00).
 - The journey is rebuilt from the back pointers (route, trip, board stop, alight stop, or a
   transfer), then turned into contract legs. `lines` and `stops` come from the adapters' Line
   and Stop objects.
@@ -134,10 +162,10 @@ Access: the stops within 1000 m of `from` (at most the nearest 60), each with it
 
 | Limit | Value | Reason |
 |---|---|---|
-| Access / egress walk | 1000 m straight line | Evening walk home; beyond it a taxi; keeps the access set ≤ 60 stops |
+| Access / egress walk | 1000 m straight line | Evening walk home; beyond it a taxi; ~150 stops in the centre |
 | Transfer walk | 500 m | Issue #44; bounds the transfer table (memory) |
 | Walk speed | 1.2 m/s, straight line × 1.3 | Common planner default; Athens streets are not a grid |
-| Transfer buffer | 60 s; +120 s at metro and suburban | Stop coordinates are platform means; stations have stairs |
+| Transfer buffer | 60 s; +120 s per metro or suburban end (once for a change inside one station) | Stop coordinates are platform means; stations have stairs |
 | Rides | ≤ 4 | Few real trips need more; caps the rounds |
 | `n` | 1-5, default 3 | One screen of options |
 | `last=false` window | 3 h | Bounds the rRAPTOR runs |
@@ -159,7 +187,11 @@ trips):
 3. The 60 s buffer: a connection with 30 s of slack is missed.
 4. Pareto: a fast 2-transfer option and a slow direct one both returned.
 5. `last=true` returns the latest `n`, sorted; `last=false` the first `n`.
-6. Runs after midnight (times > 24 h) and an `after` at 01:30 on the previous service day.
+6. Runs after midnight (times > 24 h) and an `after` at 01:30 on the previous service day;
+   a STASY trip of D+1 that starts at 02:30 is in; a ride whose stop departure is 10 min
+   after `after` but whose stop is 10 min away is found (τ filter).
+10. Same-stop changes: 60 s at a bus stop, 180 s inside a metro station.
+11. A plan's OASA daily Run id opens with `/v2/runs/{id}` at 01:30 of the next calendar day.
 7. FIFO split: an overtaking trip on the same stop sequence is still found.
 8. No route: empty list; points 800 m apart: `walk_only` set.
 9. Access limit: a stop 1100 m away is not used.

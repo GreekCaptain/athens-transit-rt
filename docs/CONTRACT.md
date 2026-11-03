@@ -720,7 +720,8 @@ Rules:
 - `/v2/runs/{id}` replaces `/v1/rail/stasy/trips/{id}` and `/v1/rail/suburban/trains/{no}` for
   the line card. It answers for any Run of the service day, started or not (`vehicle: null`
   before it starts). OASA: the matched trip's stops, timetable time plus observed delay.
-  `404 {"error":"unknown_run"}` outside the service day.
+  `404 {"error":"unknown_run"}` outside the service day (rev 15: a Run that `/v2/plan` returned
+  answers until 03:00 after its service day, §9).
 - Unknown ids: `404` `unknown_line` / `unknown_stop` / `unknown_run`. A Source still loading:
   `200` with the Source `warming_up` in `sources`, empty lists, and `null` for a single object
   that Source should fill (e.g. `line: null` in `/v2/lines/{id}` for a suburban Line before the
@@ -856,7 +857,10 @@ Rules:
 - **Service day**: 03:00 to 03:00 Athens time, as OASA's daily schedule counts it. `service_day`
   is its date. At 01:30 the service day is yesterday's, and its runs after midnight (bus times
   "24:15", the night lines) are in it. The planner holds one service day at a time; it changes
-  to the next one after 03:00, once that day's timetables are loaded.
+  to the next one after 03:00, once that day's timetables are loaded. A ride's `run` keeps the
+  date its Source gives it (§3), so a run that leaves after midnight may carry the next
+  calendar date. `/v2/runs/{id}` answers for every Run a plan returns until 03:00 after its
+  service day, also when the date in the id is yesterday's.
 - **Itinerary**: `legs` alternate walk and ride, and always start and end with a walk (a walk
   of 0 m when a point is on a Stop). `depart_at` is the start of the first walk, `arrive_at` the
   end of the last one. `transfers` = rides − 1. `walk_m` is the sum of the walks. `modes`: the
@@ -868,31 +872,33 @@ Rules:
   daily schedule (departure from the first stop plus the stop's offset in the GTFS trip that
   stands for it, as `/v2/stops/{id}` timetable Arrivals have).
 - **Walk leg**: `distance_m` is the straight line × 1.3, whole metres; the walk takes
-  `distance_m` / 1.2 m/s (about 4.3 km/h), rounded up to whole seconds. Walks from `from` and to `to`: Stops up to 1000 m
-  away (straight line). Walks between two rides: Stops up to 500 m apart. A transfer leaves
-  Stop adds 120 s to a walk that starts or ends there (the way through the station). A walk's
-  `arrive_at` is its `depart_at` plus these times; a ride's `depart_at` and `arrive_at` are the
-  timetable's. The gap between a walk's `arrive_at` and the next ride's `depart_at` is waiting:
-  at least 60 s at a transfer, and 0 s before the first ride (the first walk starts as late as it
-  can). A walk after a ride starts at the ride's `arrive_at`.
+  `distance_m` / 1.2 m/s (about 4.3 km/h), rounded up to whole seconds. A metro or suburban
+  Stop adds 120 s to a walk that starts or ends there (the way through the station). Walks from
+  `from` and to `to`: every Stop up to 1000 m away (straight line). Walks between two rides:
+  Stops up to 500 m apart. A change at the same Stop is a walk of 0 m that takes 0 s, or 120 s
+  at a metro or suburban Stop (to another platform; the 120 s is counted once).
+- **Leg times**: a walk's `arrive_at` is its `depart_at` plus its time. A ride's `depart_at`
+  and `arrive_at` are the timetable's. A walk after a ride starts at the ride's `arrive_at`.
+  The gap between a walk's `arrive_at` and the next ride's `depart_at` is waiting: at least
+  60 s at a transfer (the transfer buffer), and 0 s before the first ride (the first walk
+  starts as late as it can).
 - **Which options**: at most 3 transfers (4 rides). An option is left out when another leaves
   `from` at the same time or later, arrives at `to` at the same time or earlier, and has no
-  more transfers; at equal times and transfers, the one with less walking stays. `last=true`
-  gives the `n` options that leave latest (some may arrive after 03:00); `last=false` the `n`
-  options that leave first, looking at most 3 h past `after`. Both lists are sorted by
-  `depart_at`, then `arrive_at`. Fewer than `n` (or none) when fewer exist: `200` with
-  `itineraries: []` after the last run of the day.
+  more transfers. At equal times and transfers only one is returned; which one is not fixed.
+  `last=true` gives the `n` options that leave latest (some may arrive after 03:00);
+  `last=false` the `n` options that leave first, looking at most 3 h past `after`. Both lists
+  are sorted by `depart_at`, then `arrive_at`, then `transfers`. Fewer than `n` (or none) when
+  fewer exist: `200` with `itineraries: []` after the last run of the day.
 - **`walk_only`**: `{"distance_m": …, "duration_s": …}` when `from` and `to` are at most
   1000 m apart (straight line), else `null`. It is never one of the `itineraries`.
 - **`lines`, `stops`**: every Line and Stop that a leg names, so the client needs no other call.
 - **Data** (only what the backend already holds; a plan request never asks an upstream):
-  - `oasa`: the GTFS trips of the service day while the GTFS is current; on an expired GTFS,
-    the runs of OASA's daily schedule as the prefetch cached them. A line with no cached daily
-    schedule has no rides that day.
-  - `stasy`: the STASY timetable of the service day (the same weekday stands in when it has
-    expired: `indicative`).
-  - `proastiakos`: the day's schedule board as `/v2` already loads it. No board: no suburban
-    rides.
+  - `oasa`: the GTFS trips while the GTFS is current; on an expired GTFS, the runs of OASA's
+    daily schedule as the prefetch cached them. A line with no cached daily schedule has no
+    rides until it is cached.
+  - `stasy`: the STASY timetable (the same weekday stands in when it has expired:
+    `indicative`).
+  - `proastiakos`: the schedule boards `/v2` already holds. No board: no suburban rides.
   - `sources` lists all three with the §4 states. `oasa` is `warming_up` when its GTFS is
     expired and no daily schedule of the service day is cached yet.
 - **Errors**: `400` `bad_from`, `bad_to`, `bad_after`, `bad_n`, `outside_area`; `429 busy` with
