@@ -154,7 +154,9 @@ func (a *App) planTick(now time.Time) {
 			!now.Before(start.Add(planLateBuild-planDayStart))
 	case !gtfs.Midnight(now).Equal(gtfs.Midnight(noon)):
 		// Past midnight the caches move on to the next calendar day (a line's daily schedule, the
-		// suburban board): a rebuild would lose the service day's runs, so none before 03:00.
+		// suburban board): a rebuild would lose the service day's runs, so none before 03:00,
+		// except for the STASY timetable when the build lacks it (a start after midnight).
+		due = s.key.stasy == nil && a.planKeyOf(noon).stasy != nil
 	default:
 		k := a.planKeyOf(noon)
 		// A daily schedule lost (a failed retry) is no new input: the timetable keeps its runs.

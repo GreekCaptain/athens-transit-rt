@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/angelospk/athens-transit-rt/internal/gtfs"
+	"github.com/angelospk/athens-transit-rt/internal/gtfs/gtfstest"
 	"github.com/angelospk/athens-transit-rt/internal/model"
 	"github.com/angelospk/athens-transit-rt/internal/plan"
 	"github.com/angelospk/athens-transit-rt/internal/sched"
@@ -437,7 +438,7 @@ func TestPlanRebuildRules(t *testing.T) {
 		t.Error("a daily schedule lost: rebuilt without it")
 	}
 	setEntry(func(e *dailyEntry) { e.ok = true })
-	// After midnight the entry holds the next day's runs; the STASY timetable appears too.
+	// After midnight the entry holds the next day's runs.
 	now = time.Date(2026, 10, 13, 0, 40, 0, 0, gtfs.Athens)
 	setEntry(func(e *dailyEntry) { e.day = "2026-10-13" })
 	a.planTick(now)
@@ -461,5 +462,28 @@ func TestPlanDayBoundsDST(t *testing.T) {
 				t.Fatalf("day before %v ends %v", start, prevEnd)
 			}
 		}
+	}
+}
+
+// A start after midnight builds before the STASY timetable has loaded: it still comes in before
+// 03:00 (the one rebuild of the same day after midnight).
+func TestPlanSTASYAfterMidnightStart(t *testing.T) {
+	now := time.Date(2026, 10, 29, 0, 10, 0, 0, gtfs.Athens)
+	a := newAppConfig(t, now, Config{STASYURL: "http://127.0.0.1:1/none"})
+	a.SetFeed(gtfstest.StraightLine{Stops: 5, Trips: 6, First: 10 * 3600, Headway: 10, Leg: 5}.Feed(t), nil)
+	if err := os.CopyFS(a.stasy.Dir, os.DirFS(filepath.Join("..", "rail", "testdata", "stasy"))); err != nil {
+		t.Fatal(err)
+	}
+	a.planTick(now)
+	first := a.planner.snap()
+	if first == nil || first.key.stasy != nil {
+		t.Fatalf("first build %+v", first)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	a.stasy.Run(ctx)
+	a.planTick(now.Add(time.Minute))
+	if _, ok := a.planner.snap().tt.Run("stasy:run:M2-6:2026-10-28"); !ok {
+		t.Error("the STASY timetable that loaded after midnight is not in the planner")
 	}
 }

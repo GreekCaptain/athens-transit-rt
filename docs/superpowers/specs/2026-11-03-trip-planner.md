@@ -260,5 +260,6 @@ Where the code differs from the text above:
   appears (a build at start often runs before STASY has loaded).
 - No rebuild of the same service day after its calendar midnight: the daily cache and the
   suburban board move on to the next calendar day then, and a rebuild would drop the night's
-  runs. A daily schedule that is lost (a failed retry) is no new input either; one completed
+  runs. The one exception is a build without the STASY timetable (a start after midnight before
+  it loaded). A new GTFS or STASY feed that arrives in the night waits for 03:00. A daily schedule that is lost (a failed retry) is no new input either; one completed
   (partial to full) is.
