@@ -9,6 +9,13 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
 ## Unreleased
 
 ### Live API
+- `/v2` OASA Patterns and bus Vehicles have both directions (contract rev 15): OASA's GTFS has
+  no `direction_id`, so every Pattern was 0 (`oasa:040`: 5512 and 5513 both 0). The direction now
+  comes from where each Pattern runs, and 0 is the way `/v1/lines/{id}/schedule` calls 0
+  ([#45](https://github.com/angelospk/athens-transit-rt/issues/45)).
+- Metro M2 headsigns name where the train goes: STASY names every M2 trip after its first stop,
+  so `/v1` and `/v2` showed «→ Ελληνικό» on trains leaving Ελληνικό. Such a headsign is now the
+  trip's last stop ([#34](https://github.com/angelospk/athens-transit-rt/issues/34)).
 - While the GTFS is expired, a bus whose variant has no trip around now on today's weekday is
   matched against the trips of that variant on the nearest weekday that has some. OASA moved
   some variants to other weekdays since the 2026-07-08 feed (309Β runs 5863 on Tuesdays too):
