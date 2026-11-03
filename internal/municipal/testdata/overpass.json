@@ -1,0 +1,51 @@
+{
+  "version": 0.6,
+  "osm3s": {"timestamp_osm_base": "2026-11-03T22:00:00Z"},
+  "elements": [
+    {"type": "relation", "id": 20611425,
+     "tags": {"type": "route", "route": "bus", "ref": "1", "name": "Δημοτικό Λεωφορείο 1: Παπάγου → Χολαργός → Παπάγου",
+              "operator": "Δήμος  Παπάγου - Χολαργού", "network": "Δημοτική συγκοινωνία"},
+     "members": [
+       {"type": "way", "ref": 1, "role": "", "geometry": [{"lat": 37.9900001, "lon": 23.7900004}, {"lat": 37.991, "lon": 23.791}]},
+       {"type": "way", "ref": 2, "role": "", "geometry": [{"lat": 37.992, "lon": 23.792}, {"lat": 37.991, "lon": 23.791}]},
+       {"type": "way", "ref": 3, "role": "", "geometry": [{"lat": 37.995, "lon": 23.795}, {"lat": 37.996, "lon": 23.796}]},
+       {"type": "way", "ref": 4, "role": "platform", "geometry": [{"lat": 37.5, "lon": 23.5}, {"lat": 37.6, "lon": 23.6}]}
+     ]},
+    {"type": "relation", "id": 17502627,
+     "tags": {"type": "route", "route": "minibus", "name": "Τοπική κυκλική γραμμή",
+              "operator": "Δήμος Νέας Σμύρνης", "network": "Δημοτική Συγκοινωνία Νέας Σμύρνης"},
+     "members": [
+       {"type": "node", "ref": 101, "role": "platform", "lat": 37.94, "lon": 23.71},
+       {"type": "node", "ref": 102, "role": "platform_entry_only", "lat": 37.941, "lon": 23.711},
+       {"type": "way", "ref": 5, "role": "", "geometry": [{"lat": 37.94, "lon": 23.71}, {"lat": 37.942, "lon": 23.712}]}
+     ]},
+    {"type": "relation", "id": 20462642,
+     "tags": {"type": "route", "route": "bus", "ref": "Β1", "name": "Δημοτικό Λεωφορείο Β1: Πολύδροσο → Κοιμητήριο",
+              "operator": "Δήμος Χαλανδρίου", "network": "Δημοτική συγκοινωνία"},
+     "members": [
+       {"type": "node", "ref": 201, "role": "stop_entry_only", "lat": 38.02, "lon": 23.80},
+       {"type": "node", "ref": 202, "role": "platform", "lat": 38.0201, "lon": 23.8001},
+       {"type": "node", "ref": 203, "role": "stop", "lat": 38.03, "lon": 23.81},
+       {"type": "node", "ref": 201, "role": "stop_exit_only", "lat": 38.02, "lon": 23.80},
+       {"type": "way", "ref": 6, "role": "", "geometry": [{"lat": 38.02, "lon": 23.80}, {"lat": 38.03, "lon": 23.81}]}
+     ]},
+    {"type": "relation", "id": 999,
+     "tags": {"type": "route", "route": "bus", "ref": "7", "name": "Δημοτικό Λεωφορείο 7",
+              "operator": "Δήμος Πουθενά", "network": "Δημοτική Συγκοινωνία"},
+     "members": [
+       {"type": "way", "ref": 7, "role": "", "geometry": [{"lat": 38.1, "lon": 23.9}, {"lat": 38.11, "lon": 23.91}]}
+     ]},
+    {"type": "relation", "id": 1000,
+     "tags": {"type": "route", "route": "bus", "ref": "550", "name": "550", "operator": "ΟΣΥ Α.Ε.", "network": "ΟΑΣΑ"},
+     "members": [
+       {"type": "way", "ref": 8, "role": "", "geometry": [{"lat": 38.1, "lon": 23.9}, {"lat": 38.2, "lon": 23.95}]}
+     ]},
+    {"type": "relation", "id": 1001,
+     "tags": {"type": "route", "route": "bus", "name": "Κενή", "operator": "Δήμος Χαλανδρίου"},
+     "members": [{"type": "node", "ref": 203, "role": "stop", "lat": 38.03, "lon": 23.81}]},
+    {"type": "node", "id": 101, "lat": 37.94, "lon": 23.71, "tags": {"name": "Πλατεία", "highway": "bus_stop"}},
+    {"type": "node", "id": 102, "lat": 37.941, "lon": 23.711, "tags": {"highway": "bus_stop"}},
+    {"type": "node", "id": 201, "lat": 38.02, "lon": 23.80, "tags": {"name": "Πολύδροσο", "public_transport": "stop_position"}},
+    {"type": "node", "id": 203, "lat": 38.03, "lon": 23.81, "tags": {"name": "Κοιμητήριο"}}
+  ]
+}

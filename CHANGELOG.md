@@ -23,6 +23,10 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
   or railway.gov.gr). RAPTOR in process (`internal/plan`), rebuilt for each service day. Every
   leg has a `shape`; every ride's `run` opens with `/v2/runs/{id}`, also after midnight until
   03:00 ([#44](https://github.com/angelospk/athens-transit-rt/issues/44)).
+- `GET /v2/municipal` (contract rev 18): the bus routes that 12 municipalities run, with their
+  stops where OpenStreetMap has them and a link to each municipality's timetable page. From
+  OpenStreetMap (ODbL) through the Overpass API, weekly; no times, no live data, no OASA request
+  ([#59](https://github.com/angelospk/athens-transit-rt/issues/59)).
 - `/v2` OASA Patterns and bus Vehicles have both directions (contract rev 15): OASA's GTFS has
   no `direction_id`, so every Pattern was 0 (`oasa:040`: 5512 and 5513 both 0). The direction now
   comes from where each Pattern runs, and 0 is the way `/v1/lines/{id}/schedule` calls 0

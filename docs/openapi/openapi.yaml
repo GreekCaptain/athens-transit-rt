@@ -1883,6 +1883,50 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
+  /v2/municipal:
+    get:
+      tags: [V2]
+      operationId: getV2Municipal
+      summary: Municipal bus routes from OpenStreetMap (rev 18)
+      description: |
+        The bus routes that municipalities run (δημοτική συγκοινωνία), which are not in the OASA
+        GTFS: OSM route relations whose operator is a «Δήμος», read from the Overpass API at
+        start and then every 7 days (hourly after a failure). No timetable and no live data:
+        clients link `timetable_url`, the municipality's own page. Data © OpenStreetMap
+        contributors, ODbL: show `attribution` with the layer.
+
+        After the first good poll: `Cache-Control: public, max-age=86400` and an `ETag`
+        (`If-None-Match` → `304`). Before it: `routes: []`, `stops: {}`, `updated_at: null`,
+        `max-age=5` and no `ETag`. No `sources`.
+      responses:
+        "200":
+          description: Every municipal route and its stops.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MunicipalResponse"
+              example:
+                routes:
+                  - id: "osm:r20462642"
+                    ref: Β1
+                    name: "Δημοτικό Λεωφορείο Β1: Πολύδροσο → Κοιμητήριο"
+                    municipality: Δήμος Χαλανδρίου
+                    timetable_url: "https://www.chalandri.gr/yphresies/ypodomes-erga/dimotiki-sygkoinonia/"
+                    shape: [[[38.02, 23.8], [38.03, 23.81]]]
+                    stops: ["osm:n201", "osm:n203"]
+                stops:
+                  "osm:n201": {name: Πολύδροσο, lat: 38.02, lon: 23.8}
+                  "osm:n203": {name: Κοιμητήριο, lat: 38.03, lon: 23.81}
+                updated_at: 1793793600
+                attribution: © OpenStreetMap contributors (ODbL)
+        "304":
+          description: Not modified (`If-None-Match` matched the `ETag`).
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
 components:
   parameters:
     LineId:
@@ -3408,6 +3452,73 @@ components:
         urgent:
           type: boolean
           description: "`true` for a strike."
+
+    MunicipalRoute:
+      type: object
+      description: A municipal bus route of `/v2/municipal` (rev 18), one OSM route relation.
+      required: [id, ref, name, municipality, timetable_url, shape, stops]
+      properties:
+        id:
+          type: string
+          description: "`osm:r<relation id>`."
+        ref:
+          type: [string, "null"]
+          description: The line's short name; `null` when OSM has none.
+        name:
+          type: string
+        municipality:
+          type: string
+          description: The operator, spaces normalised («Δήμος Παπάγου-Χολαργού»).
+        timetable_url:
+          type: [string, "null"]
+          description: The municipality's page with the routes and times; `null` when unknown.
+        shape:
+          type: array
+          description: Lines of `[lat, lon]` pairs, 5 decimals; one line or a few.
+          items:
+            type: array
+            items:
+              type: array
+              items: {type: number}
+              minItems: 2
+              maxItems: 2
+        stops:
+          type: array
+          description: Stop ids (`osm:n<node id>`) in route order; `[]` when OSM has none.
+          items: {type: string}
+
+    MunicipalStop:
+      type: object
+      required: [name, lat, lon]
+      properties:
+        name:
+          type: [string, "null"]
+        lat:
+          type: number
+        lon:
+          type: number
+
+    MunicipalResponse:
+      type: object
+      description: The body of `/v2/municipal`.
+      required: [routes, stops, updated_at, attribution]
+      properties:
+        routes:
+          type: array
+          description: By municipality, then ref, then name.
+          items:
+            $ref: "#/components/schemas/MunicipalRoute"
+        stops:
+          type: object
+          description: Every Stop listed by a route, by id.
+          additionalProperties:
+            $ref: "#/components/schemas/MunicipalStop"
+        updated_at:
+          type: [integer, "null"]
+          description: Unix seconds of the last good poll; `null` before the first.
+        attribution:
+          type: string
+          description: The ODbL credit to show with the layer.
 
     AlertsResponse:
       type: object
