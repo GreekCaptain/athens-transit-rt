@@ -411,14 +411,8 @@ func TestClientDoesNotFollowRedirects(t *testing.T) {
 // A slow first connect followed by a fast one: the second request still arrives at least a
 // quarter gap after the first was written.
 func TestClientSlowConnectKeepsWriteFloor(t *testing.T) {
-	var mu sync.Mutex
-	var arrived []time.Time
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		arrived = append(arrived, time.Now())
-		mu.Unlock()
-		w.Write([]byte("[]"))
-	}))
+	rec := &arrivals{t: t, route: "slow-connect"}
+	srv := httptest.NewServer(rec)
 	defer srv.Close()
 	c := New(srv.URL+"/", nil)
 	c.MinGap = 200 * time.Millisecond
@@ -427,10 +421,11 @@ func TestClientSlowConnectKeepsWriteFloor(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
-		go func() { defer wg.Done(); c.BusLocations(context.Background(), "1") }()
+		go func() { defer wg.Done(); c.BusLocations(context.Background(), rec.route) }()
 		time.Sleep(5 * time.Millisecond)
 	}
 	wg.Wait()
+	arrived := rec.times()
 	if len(arrived) != 2 {
 		t.Fatalf("%d arrivals", len(arrived))
 	}
@@ -458,14 +453,8 @@ func delayedFirstDial(d time.Duration) http.RoundTripper {
 // add to the gap: with a 100 ms gap and 100 ms connects, 6 requests take about 600 ms, not
 // 1100 ms (2.6 instead of 4 req/s in production).
 func TestClientGapOverlapsConnect(t *testing.T) {
-	var mu sync.Mutex
-	var arrived []time.Time
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		arrived = append(arrived, time.Now())
-		mu.Unlock()
-		w.Write([]byte("[]"))
-	}))
+	rec := &arrivals{t: t, route: "gap-overlap"}
+	srv := httptest.NewServer(rec)
 	defer srv.Close()
 	c := New(srv.URL+"/", nil)
 	c.MinGap = 100 * time.Millisecond
@@ -477,10 +466,12 @@ func TestClientGapOverlapsConnect(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := c.BusLocations(context.Background(), "1")
+			_, err := c.BusLocations(context.Background(), rec.route)
 			errs <- err
 		}()
 	}
+	// A stray request (another process, a port probe) hits the server mid-run: it must not count.
+	go http.Get(srv.URL + "/stray")
 	wg.Wait()
 	close(errs)
 	for err := range errs {
@@ -488,6 +479,7 @@ func TestClientGapOverlapsConnect(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	arrived := rec.times()
 	if len(arrived) != 6 {
 		t.Fatalf("%d arrivals", len(arrived))
 	}
@@ -512,4 +504,34 @@ func delayedDials(d time.Duration) http.RoundTripper {
 		return dial(ctx, network, addr)
 	}
 	return tr
+}
+
+// arrivals records when this test's own requests reach the server. The test server listens on
+// a loopback port that anything on the machine can reach (port probes, other test processes),
+// so a request counts only with the client's User-Agent and this test's route code; any other
+// request is logged and ignored (#62: "7 arrivals" from 6 requests).
+type arrivals struct {
+	t     *testing.T
+	route string
+	mu    sync.Mutex
+	at    []time.Time
+}
+
+func (a *arrivals) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	if r.Header.Get("User-Agent") != UserAgent || r.URL.Query().Get("p1") != a.route {
+		a.t.Logf("ignored stray request %s %s from %s (%q)", r.Method, r.URL, r.RemoteAddr, r.Header.Get("User-Agent"))
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	a.mu.Lock()
+	a.at = append(a.at, now)
+	a.mu.Unlock()
+	w.Write([]byte("[]"))
+}
+
+func (a *arrivals) times() []time.Time {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]time.Time(nil), a.at...)
 }
