@@ -1,0 +1,271 @@
+{
+  "service_day": "2026-10-05",
+  "from": {
+    "lat": 37.98012,
+    "lon": 23.6995
+  },
+  "to": {
+    "lat": 37.9806,
+    "lon": 23.731
+  },
+  "after": 1791184800,
+  "last": false,
+  "itineraries": [
+    {
+      "depart_at": 1791185350,
+      "arrive_at": 1791186420,
+      "duration_s": 1070,
+      "transfers": 0,
+      "walk_m": 203,
+      "modes": [
+        "bus"
+      ],
+      "legs": [
+        {
+          "kind": "walk",
+          "from": {
+            "stop": null,
+            "lat": 37.98012,
+            "lon": 23.6995
+          },
+          "to": {
+            "stop": "oasa:S0",
+            "lat": 37.98,
+            "lon": 23.7
+          },
+          "depart_at": 1791185350,
+          "arrive_at": 1791185400,
+          "distance_m": 60,
+          "shape": [
+            [
+              37.98012,
+              23.6995
+            ],
+            [
+              37.98,
+              23.7
+            ]
+          ]
+        },
+        {
+          "kind": "ride",
+          "line": "oasa:L",
+          "mode": "bus",
+          "headsign": "EAST",
+          "run": "oasa:run:T03:2026-10-05",
+          "from": {
+            "stop": "oasa:S0",
+            "lat": 37.98,
+            "lon": 23.7
+          },
+          "to": {
+            "stop": "oasa:S3",
+            "lat": 37.98,
+            "lon": 23.73
+          },
+          "depart_at": 1791185400,
+          "arrive_at": 1791186300,
+          "hops": 3,
+          "source": "timetable",
+          "shape": [
+            [
+              37.98,
+              23.7
+            ],
+            [
+              37.98,
+              23.71
+            ],
+            [
+              37.98,
+              23.72
+            ],
+            [
+              37.98,
+              23.73
+            ]
+          ]
+        },
+        {
+          "kind": "walk",
+          "from": {
+            "stop": "oasa:S3",
+            "lat": 37.98,
+            "lon": 23.73
+          },
+          "to": {
+            "stop": null,
+            "lat": 37.9806,
+            "lon": 23.731
+          },
+          "depart_at": 1791186300,
+          "arrive_at": 1791186420,
+          "distance_m": 143,
+          "shape": [
+            [
+              37.98,
+              23.73
+            ],
+            [
+              37.9806,
+              23.731
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "depart_at": 1791185950,
+      "arrive_at": 1791187020,
+      "duration_s": 1070,
+      "transfers": 0,
+      "walk_m": 203,
+      "modes": [
+        "bus"
+      ],
+      "legs": [
+        {
+          "kind": "walk",
+          "from": {
+            "stop": null,
+            "lat": 37.98012,
+            "lon": 23.6995
+          },
+          "to": {
+            "stop": "oasa:S0",
+            "lat": 37.98,
+            "lon": 23.7
+          },
+          "depart_at": 1791185950,
+          "arrive_at": 1791186000,
+          "distance_m": 60,
+          "shape": [
+            [
+              37.98012,
+              23.6995
+            ],
+            [
+              37.98,
+              23.7
+            ]
+          ]
+        },
+        {
+          "kind": "ride",
+          "line": "oasa:L",
+          "mode": "bus",
+          "headsign": "EAST",
+          "run": "oasa:run:T04:2026-10-05",
+          "from": {
+            "stop": "oasa:S0",
+            "lat": 37.98,
+            "lon": 23.7
+          },
+          "to": {
+            "stop": "oasa:S3",
+            "lat": 37.98,
+            "lon": 23.73
+          },
+          "depart_at": 1791186000,
+          "arrive_at": 1791186900,
+          "hops": 3,
+          "source": "timetable",
+          "shape": [
+            [
+              37.98,
+              23.7
+            ],
+            [
+              37.98,
+              23.71
+            ],
+            [
+              37.98,
+              23.72
+            ],
+            [
+              37.98,
+              23.73
+            ]
+          ]
+        },
+        {
+          "kind": "walk",
+          "from": {
+            "stop": "oasa:S3",
+            "lat": 37.98,
+            "lon": 23.73
+          },
+          "to": {
+            "stop": null,
+            "lat": 37.9806,
+            "lon": 23.731
+          },
+          "depart_at": 1791186900,
+          "arrive_at": 1791187020,
+          "distance_m": 143,
+          "shape": [
+            [
+              37.98,
+              23.73
+            ],
+            [
+              37.9806,
+              23.731
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "walk_only": null,
+  "lines": {
+    "oasa:L": {
+      "id": "oasa:L",
+      "mode": "bus",
+      "label": "L",
+      "name": "WEST - EAST",
+      "name_en": null,
+      "color": "#153ce0",
+      "text_color": "#ffffff",
+      "source": "oasa"
+    }
+  },
+  "stops": {
+    "oasa:S0": {
+      "id": "oasa:S0",
+      "name": "STOP 0",
+      "name_en": null,
+      "lat": 37.98,
+      "lon": 23.7,
+      "modes": [
+        "bus"
+      ],
+      "lines": [
+        "oasa:L"
+      ],
+      "source": "oasa"
+    },
+    "oasa:S3": {
+      "id": "oasa:S3",
+      "name": "STOP 3",
+      "name_en": null,
+      "lat": 37.98,
+      "lon": 23.73,
+      "modes": [
+        "bus"
+      ],
+      "lines": [
+        "oasa:L"
+      ],
+      "source": "oasa"
+    }
+  },
+  "sources": [
+    {
+      "id": "oasa",
+      "state": "ok",
+      "updated_at": 1791184800
+    }
+  ]
+}

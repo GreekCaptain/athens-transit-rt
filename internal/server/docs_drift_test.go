@@ -66,7 +66,7 @@ func errorCodesInCode(t *testing.T) []string {
 					}
 				}
 			case *ast.CallExpr:
-				if id, ok := n.Fun.(*ast.Ident); ok && id.Name == "notFound" && len(n.Args) == 2 {
+				if id, ok := n.Fun.(*ast.Ident); ok && (id.Name == "notFound" || id.Name == "planError") && len(n.Args) == 2 {
 					if v, ok := lit(n.Args[1]); ok {
 						set[v] = true
 					}

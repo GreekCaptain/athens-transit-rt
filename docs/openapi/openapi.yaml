@@ -1728,6 +1728,117 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
+  /v2/plan:
+    get:
+      tags: [V2]
+      operationId: getV2Plan
+      summary: Trips from a point to a point, with transfers (rev 16)
+      description: |
+        Contract §9. A walk to a Stop, one to four rides of any Mode with walks between them, and
+        a walk to `to`, from the timetables only (`source: timetable`): no live delays. Options
+        that another one dominates (it leaves at the same time or later, arrives at the same time
+        or earlier, with no more transfers) are left out. `last=true`: the last `n` options of the
+        service day (03:00 to 03:00 Athens time); else the first `n`, at most 3 h past `after`.
+        Sorted by `depart_at`, then `arrive_at`, then `transfers`. Every ride's `run` opens with
+        `/v2/runs/{id}` until 03:00 after its service day.
+
+        Walks: straight line × 1.3 at 1.2 m/s, rounded up; 120 s more at a metro or suburban Stop.
+        Walks to and from the points: Stops up to 1000 m away; between rides: up to 500 m; at
+        least 60 s of waiting before each ride after the first.
+
+        `Cache-Control: public, max-age=60`; `max-age=5` when a Source is `warming_up` or `down`,
+        or before the planner's first timetable is built (then `itineraries: []`). No `ETag`.
+        Clients round `from` and `to` to 4 decimals and `after` to the minute.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: "`lat,lon`, decimal degrees, inside Attica (lat 37.6-38.4, lon 23.2-24.2)."
+          schema: {type: string}
+          example: "37.97527,23.73552"
+        - name: to
+          in: query
+          required: true
+          description: "`lat,lon`, as `from`."
+          schema: {type: string}
+          example: "37.87390,23.75400"
+        - name: after
+          in: query
+          description: |
+            Unix seconds; default now. No option leaves `from` before it. Before the end of the
+            current service day, and in it or at most 1 h before now.
+          schema: {type: integer, format: int64}
+          example: 1793227800
+        - name: last
+          in: query
+          description: "`true`: the last `n` options of the service day. Default `false`."
+          schema: {type: boolean}
+        - name: n
+          in: query
+          description: Options to return, 1-5; default 3.
+          schema: {type: integer, minimum: 1, maximum: 5}
+      responses:
+        "200":
+          description: |
+            The options (fewer than `n`, or none, when fewer exist), the walk when the points are
+            at most 1000 m apart, every Line and Stop a leg names, and all three Sources.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanResponse"
+              example:
+                service_day: "2026-11-03"
+                from: {lat: 37.97527, lon: 23.73552}
+                to: {lat: 37.8739, lon: 23.754}
+                after: 1793227800
+                last: true
+                itineraries:
+                  - depart_at: 1793230200
+                    arrive_at: 1793231859
+                    duration_s: 1659
+                    transfers: 0
+                    walk_m: 515
+                    modes: [metro]
+                    legs:
+                      - {kind: walk, from: {stop: null, lat: 37.97527, lon: 23.73552}, to: {stop: "stasy:συνταγμα-metro", lat: 37.97527, lon: 23.73552}, depart_at: 1793230200, arrive_at: 1793230320, distance_m: 0, shape: [[37.97527, 23.73552], [37.97527, 23.73552]]}
+                      - {kind: ride, line: "stasy:M2", mode: metro, headsign: Ελληνικό, run: "stasy:run:1012345:2026-11-03", from: {stop: "stasy:συνταγμα-metro", lat: 37.97527, lon: 23.73552}, to: {stop: "stasy:ελληνικο-metro", lat: 37.8926, lon: 23.7471}, depart_at: 1793230320, arrive_at: 1793231340, hops: 10, source: timetable, shape: [[37.97527, 23.73552], [37.9681, 23.729], [37.8926, 23.7471]]}
+                      - {kind: walk, from: {stop: "stasy:ελληνικο-metro", lat: 37.8926, lon: 23.7471}, to: {stop: null, lat: 37.8739, lon: 23.754}, depart_at: 1793231340, arrive_at: 1793231859, distance_m: 515, shape: [[37.8926, 23.7471], [37.8739, 23.754]]}
+                walk_only: null
+                lines: {}
+                stops: {}
+                sources:
+                  - {id: oasa, state: ok, updated_at: 1793227790}
+                  - {id: stasy, state: ok, updated_at: 1793205600}
+                  - {id: proastiakos, state: ok, updated_at: 1793227500}
+        "400":
+          description: |
+            `bad_from`, `bad_to` (not `lat,lon`), `outside_area` (a point outside Attica),
+            `bad_after` (not Unix seconds, or outside the allowed span), `bad_n` (not 1-5).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: outside_area
+        "429":
+          description: |
+            `busy`: two plans are running and none finished within 2 s (a plan costs CPU; the
+            other endpoints are not slowed). `Retry-After: 2`. Or, from Cloudflare, the rate limit
+            (see the other operations).
+          headers:
+            Retry-After:
+              description: Seconds to wait.
+              schema: {type: integer}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: busy
+
   /v2/alerts:
     get:
       tags: [V2]
@@ -1807,7 +1918,7 @@ components:
       properties:
         error:
           type: string
-          enum: [unknown_line, not_found, warming_up, feed_unavailable, query_not_allowed, bad_date, internal, missing_stop, unknown_stop, unknown_trip, unknown_train, upstream_unavailable, busy, unknown_run]
+          enum: [unknown_line, not_found, warming_up, feed_unavailable, query_not_allowed, bad_date, internal, missing_stop, unknown_stop, unknown_trip, unknown_train, upstream_unavailable, busy, unknown_run, bad_from, bad_to, bad_after, bad_n, outside_area]
 
     LatLon:
       type: array
@@ -2226,7 +2337,7 @@ components:
         start_delay:
           type: object
           description: |
-            How late the runs of OASA's daily schedule left their first stop (contract rev 16), for
+            How late the runs of OASA's daily schedule left their first stop (contract rev 17), for
             buses seen leaving on a clear run while the static GTFS is expired. A run counts once,
             for the day of its scheduled departure. Missing when no run of the day was measured.
           required: [runs, by_line]
@@ -3121,6 +3232,131 @@ components:
           description: State of that one Source.
           items:
             $ref: "#/components/schemas/SourceState"
+
+    PlanPoint:
+      type: object
+      description: A query point as given.
+      required: [lat, lon]
+      properties:
+        lat: {type: number}
+        lon: {type: number}
+
+    PlanPlace:
+      type: object
+      required: [stop, lat, lon]
+      properties:
+        stop:
+          description: The Stop id; `null` at the query points.
+          type: [string, "null"]
+        lat: {type: number}
+        lon: {type: number}
+
+    PlanWalk:
+      type: object
+      required: [kind, from, to, depart_at, arrive_at, distance_m, shape]
+      properties:
+        kind: {type: string, enum: [walk]}
+        from: {$ref: "#/components/schemas/PlanPlace"}
+        to: {$ref: "#/components/schemas/PlanPlace"}
+        depart_at: {type: integer, format: int64}
+        arrive_at:
+          type: integer
+          format: int64
+          description: "`depart_at` + the walk's time (`distance_m` / 1.2 m/s rounded up, + 120 s at a metro or suburban Stop)."
+        distance_m:
+          type: integer
+          description: Straight line × 1.3, whole metres; 0 at a change inside one Stop.
+        shape:
+          type: array
+          description: The straight line from `from` to `to` (2 points; a later rev may follow the streets).
+          items: {type: array, items: {type: number}, minItems: 2, maxItems: 2}
+
+    PlanRide:
+      type: object
+      required: [kind, line, mode, headsign, run, from, to, depart_at, arrive_at, hops, source, shape]
+      properties:
+        kind: {type: string, enum: [ride]}
+        line: {type: string}
+        mode: {type: string, enum: [bus, trolley, metro, tram, suburban]}
+        headsign: {type: string}
+        run:
+          type: string
+          description: The Run id; `/v2/runs/{id}` gives its live state until 03:00 after the service day.
+        from: {$ref: "#/components/schemas/PlanPlace"}
+        to: {$ref: "#/components/schemas/PlanPlace"}
+        depart_at: {type: integer, format: int64, description: "The timetable departure from `from`."}
+        arrive_at: {type: integer, format: int64, description: "The timetable arrival at `to`."}
+        hops: {type: integer, description: "Stops the ride moves past, the last one included."}
+        source: {type: string, enum: [timetable]}
+        shape:
+          type: array
+          description: |
+            The Pattern shape cut from the board Stop to the alight Stop; the Stops' own points
+            when the Pattern has none. 5 decimals; the first and last points are `from` and `to`.
+          items: {type: array, items: {type: number}, minItems: 2, maxItems: 2}
+
+    Itinerary:
+      type: object
+      required: [depart_at, arrive_at, duration_s, transfers, walk_m, modes, legs]
+      properties:
+        depart_at: {type: integer, format: int64, description: "Start of the first walk."}
+        arrive_at: {type: integer, format: int64, description: "End of the last walk."}
+        duration_s: {type: integer}
+        transfers: {type: integer, description: "Rides − 1 (0-3)."}
+        walk_m: {type: integer, description: "Sum of the walks."}
+        modes:
+          type: array
+          description: The Modes of the rides, in ride order, without repeats.
+          items: {type: string}
+        legs:
+          type: array
+          description: Walk, ride, walk, …, walk (always odd, walks at both ends).
+          items:
+            oneOf:
+              - $ref: "#/components/schemas/PlanWalk"
+              - $ref: "#/components/schemas/PlanRide"
+            discriminator:
+              propertyName: kind
+              mapping:
+                walk: "#/components/schemas/PlanWalk"
+                ride: "#/components/schemas/PlanRide"
+
+    PlanResponse:
+      type: object
+      required: [service_day, from, to, after, last, itineraries, walk_only, lines, stops, sources]
+      properties:
+        service_day:
+          type: string
+          format: date
+          description: The service day (03:00 to 03:00) whose timetable answered.
+        from: {$ref: "#/components/schemas/PlanPoint"}
+        to: {$ref: "#/components/schemas/PlanPoint"}
+        after: {type: integer, format: int64}
+        last: {type: boolean}
+        itineraries:
+          type: array
+          items: {$ref: "#/components/schemas/Itinerary"}
+        walk_only:
+          description: The walk from `from` to `to` when they are at most 1000 m apart (straight line), else `null`.
+          anyOf:
+            - type: object
+              required: [distance_m, duration_s]
+              properties:
+                distance_m: {type: integer}
+                duration_s: {type: integer}
+            - type: "null"
+        lines:
+          type: object
+          description: Every Line a ride names, by id.
+          additionalProperties: {$ref: "#/components/schemas/Line"}
+        stops:
+          type: object
+          description: Every Stop a leg names, by id.
+          additionalProperties: {$ref: "#/components/schemas/Stop"}
+        sources:
+          type: array
+          description: All three Sources. `oasa` is `warming_up` while its GTFS is expired and no daily schedule of the service day is cached.
+          items: {$ref: "#/components/schemas/SourceState"}
 
     Alert:
       type: object
