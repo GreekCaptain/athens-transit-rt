@@ -32,6 +32,7 @@ import (
 	"github.com/angelospk/athens-transit-rt/internal/sched"
 	"github.com/angelospk/athens-transit-rt/internal/segspeed"
 	"github.com/angelospk/athens-transit-rt/internal/telematics"
+	"github.com/angelospk/athens-transit-rt/internal/usual"
 )
 
 const (
@@ -124,6 +125,11 @@ type App struct {
 
 	hist *history.Writer                // nil: no fix history
 	segs atomic.Pointer[segspeed.Table] // typical speeds from the history; nil until built
+	// usual holds the stop passes of past days (/v2/stops/{id} `usual`); nil without history.
+	usual atomic.Pointer[usual.Store]
+	// histBuild runs one history build at a time (typical speeds, usual passes): each holds
+	// tens of MB while it reads.
+	histBuild sync.Mutex
 
 	stasy    *rail.STASYStore
 	suburban *rail.Suburban
@@ -619,6 +625,7 @@ func (a *App) Run(ctx context.Context) error {
 		defer h.Close()
 		go a.dailyStats(ctx)
 		go a.typicalSpeeds(ctx)
+		go a.usualPasses(ctx)
 	}
 	go a.prefetchDaily(ctx)
 	srv := &http.Server{Addr: a.cfg.Listen, Handler: a.Handler(), ReadHeaderTimeout: 10 * time.Second,

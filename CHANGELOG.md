@@ -9,6 +9,12 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
 ## Unreleased
 
 ### Live API
+- `/v2/stops/{id}` gets `usual` (contract rev 18): per OASA line and headsign, how often a bus
+  usually passes in this hour of this kind of day, and, when the past weeks agree (≥ 3 days,
+  waits within 3 min) and today's timetable has a run near it, the usual time of the next pass.
+  Learnt nightly from the fix history on disk (one ~1.2 MB file of stop passes per day in
+  `<state>/usual`), so no new OASA calls. For the stop card's lines with no live bus
+  ([map#24](https://github.com/angelospk/athens-transit-map/issues/24)).
 - `/v2` OASA Patterns and bus Vehicles have both directions (contract rev 15): OASA's GTFS has
   no `direction_id`, so every Pattern was 0 (`oasa:040`: 5512 and 5513 both 0). The direction now
   comes from where each Pattern runs, and 0 is the way `/v1/lines/{id}/schedule` calls 0

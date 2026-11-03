@@ -1,8 +1,8 @@
 # Usual headway and next-pass estimate at a stop
 
-Status: draft, phase 1 (data study + proposal), 2026-11-03. Issue:
-[athens-transit-map#24](https://github.com/angelospk/athens-transit-map/issues/24). No code in
-the server yet. Phase 2 (build) starts only after Harold decides the points at the end.
+Status: phase 1 (data study + proposal) 2026-11-03; Harold decided 2026-11-04; phase 2 built
+(see [Phase 2](#phase-2-as-built)). Issue:
+[athens-transit-map#24](https://github.com/angelospk/athens-transit-map/issues/24).
 
 ## What Harold wants
 
@@ -242,3 +242,40 @@ Per (line, stop, headsign, day type), from the last 28 days of history (outage h
   crossing was not detected counts as no-live (a small share; passes found are within about ±15%
   of the GTFS count on most lines).
 - In production, OASA's own predictions (contract rev 11) cover part of the no-live cases.
+
+## Phase 2 (as built)
+
+Harold's decisions (2026-11-04):
+
+1. A time only when the past weeks agree (≥ 3 days, spread ≤ 3′) and the schedule guard
+   confirms a run; else «Συνήθως περνά κάθε ~H′ τέτοια ώρα».
+2. Wording 2: «Συνήθως περνά κάθε ~15′ τέτοια ώρα» / «Συνήθως περνά ~21:40 (από τις
+   προηγούμενες εβδομάδες)».
+3. A backend field `usual` on `/v2/stops/{id}` (contract rev 18), built nightly from the
+   history, no OASA load.
+
+What changed from the proposal:
+
+- **Day files of passes, not a 5-min grid.** The nightly job (`internal/usual`) writes one
+  immutable file per finished service day: the stop passes (stop, line, headsign, time) and the
+  outage minutes, sorted by stop, with an index. `/v2/stops/{id}` reads that stop's slice of
+  each training day and computes `next`, `spread` and the headways for the exact time of the
+  request. A new day costs one build; a GTFS change does not rebuild old days. Measured on the
+  23 days of the study: 0.2-0.8 s per day, 0.5-1.3 MB per file (≈ 35 MB for 28 days), +31 MB
+  heap at peak while one day builds (the feed is already loaded), 6 MB for the 23 indexes, one
+  query ≈ 0.1 ms.
+- **Pass detection** is the study's `passes.py` ported to Go, with the matcher's stop snapping
+  (`geo.SnapStops`, so it agrees with `s_m`). On the 22 study stops it finds 99.4% of the
+  study's passes within 60 s (309Β: 90%, a loop line where the two snappings differ).
+- **"Most days" rule** (proposal rule 1, not measured): `next_at` also needs more than half of
+  the training days that could be read (no outage over the wait) to have a pass within 3 h.
+- **Guard**: an Arrival of the same line and headsign (today's timetable or a bus) within
+  ±15 min of `next_at`. The board lists Arrivals up to 2 h ahead, so a `next_at` further away
+  is dropped.
+- **Holidays**: fixed Greek public holidays plus Clean Monday, Easter Monday and Whit Monday
+  count as Sunday. Good Friday and Holy Saturday keep their weekday type.
+
+Not done: the study was not re-run on the production history (the production host is not
+reachable from the dev machines). Once deployed, the server's log line `usual passes built`
+gives the per-day pass counts there.
+
