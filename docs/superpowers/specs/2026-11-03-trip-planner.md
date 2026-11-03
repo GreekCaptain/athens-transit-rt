@@ -167,6 +167,11 @@ around `to`.
 - `run` on every ride: the client opens `/v2/runs/{id}` for the live state; the plan itself
   stays timetable-only and cacheable for 60 s.
 - `lines` and `stops` maps: the card renders without `/v2/stops/{id}` calls.
+- `shape` on every leg, for the app's route map (Harold, 2026-11-03: map route mode, the
+  evening card with "leave in X", Plan B and "leave now" alerts in the first app version).
+  Rides cut the Pattern shape the backend already serves; walks are straight lines in rev 15.
+  Street paths for walks later: OpenRouteService for the chosen itinerary only, cached
+  (sends the user's points to a third party: needs Harold's yes); no router in the container.
 - `walk_only` beside the list, not in it: a walk is always possible and would push the rides
   out of a list of `n`.
 
@@ -207,6 +212,8 @@ trips):
 7. FIFO split: an overtaking trip on the same stop sequence is still found.
 8. No route: empty list; points 800 m apart: `walk_only` set.
 9. Access limit: a stop 1100 m away is not used.
+12. Leg `shape`: a ride's shape starts and ends at its board and alight stops; a loop line
+    whose shape passes the board stop twice is cut at the right pass; a walk is 2 points.
 
 Handler tests: parameter errors, `429`, cache headers, `sources` states, `warming_up` on an
 expired GTFS with no daily cache. A fixture `docs/fixtures/v2/plan.json` from a test feed.

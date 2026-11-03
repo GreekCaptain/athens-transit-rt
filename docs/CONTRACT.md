@@ -825,23 +825,28 @@ GET /v2/plan?from=37.97527,23.73552&to=37.87390,23.75400&after=1793227800&last=t
       "legs": [
         {"kind": "walk", "from": {"stop": null, "lat": 37.97527, "lon": 23.73552},
          "to": {"stop": "stasy:συνταγμα-metro", "lat": 37.97527, "lon": 23.73552},
-         "depart_at": 1793230200, "arrive_at": 1793230320, "distance_m": 0},
+         "depart_at": 1793230200, "arrive_at": 1793230320, "distance_m": 0,
+         "shape": [[37.97527, 23.73552], [37.97527, 23.73552]]},
         {"kind": "ride", "line": "stasy:M2", "mode": "metro", "headsign": "Ελληνικό",
          "run": "stasy:run:1012345:2026-11-03",
          "from": {"stop": "stasy:συνταγμα-metro", "lat": 37.97527, "lon": 23.73552},
          "to": {"stop": "stasy:ελληνικο-metro", "lat": 37.89260, "lon": 23.74710},
-         "depart_at": 1793230320, "arrive_at": 1793231340, "hops": 10, "source": "timetable"},
+         "depart_at": 1793230320, "arrive_at": 1793231340, "hops": 10, "source": "timetable",
+         "shape": [[37.97527, 23.73552], [37.9681, 23.7290], [37.8926, 23.7471]]},
         {"kind": "walk", "from": {"stop": "stasy:ελληνικο-metro", "lat": 37.8926, "lon": 23.7471},
          "to": {"stop": "oasa:330032", "lat": 37.8921, "lon": 23.7480},
-         "depart_at": 1793231340, "arrive_at": 1793231539, "distance_m": 95},
+         "depart_at": 1793231340, "arrive_at": 1793231539, "distance_m": 95,
+         "shape": [[37.8926, 23.7471], [37.8921, 23.748]]},
         {"kind": "ride", "line": "oasa:122", "mode": "bus", "headsign": "Σαρωνίδα",
          "run": "oasa:run:13180045-ΕΣ-...@2340:2026-11-03",
          "from": {"stop": "oasa:330032", "lat": 37.8921, "lon": 23.748},
          "to": {"stop": "oasa:330140", "lat": 37.8752, "lon": 23.7531},
-         "depart_at": 1793231700, "arrive_at": 1793232900, "hops": 9, "source": "timetable"},
+         "depart_at": 1793231700, "arrive_at": 1793232900, "hops": 9, "source": "timetable",
+         "shape": [[37.8921, 23.748], [37.8840, 23.7502], [37.8752, 23.7531]]},
         {"kind": "walk", "from": {"stop": "oasa:330140", "lat": 37.8752, "lon": 23.7531},
          "to": {"stop": null, "lat": 37.8739, "lon": 23.754},
-         "depart_at": 1793232900, "arrive_at": 1793233329, "distance_m": 515}
+         "depart_at": 1793232900, "arrive_at": 1793233329, "distance_m": 515,
+         "shape": [[37.8752, 23.7531], [37.8739, 23.754]]}
       ]
     }
   ],
@@ -890,6 +895,18 @@ Rules:
   picked first (ties: earlier arrival, then fewer transfers); the list is then sorted by
   `depart_at`, then `arrive_at`, then `transfers`. Fewer than `n` (or none) when
   fewer exist: `200` with `itineraries: []` after the last run of the day.
+- **`shape`** (every leg, for the route map): `[[lat, lon], …]`, 5 decimals, at least 2 points.
+  A ride: its Pattern `shape` cut from the board Stop to the alight Stop (the stops' nearest
+  points on it, in ride order); when the Pattern has no shape, the stops' own points in order.
+  A walk: in rev 15 the straight line from its start to its end (clients draw it dotted); a
+  later rev may give the path along streets with the same key. The first and last point of a
+  leg are its `from` and `to` points.
+- **Live state and Plan B (client rules)**: the plan is timetable only. For the first ride the
+  client reads `/v2/stops/{from.stop}` and takes the Arrival with the ride's `run` (else the
+  first one of the same `line` and `headsign` at or after the ride's `depart_at`); "leave in X"
+  is that Arrival's `at` − the first walk's time − now. When the user would miss it, the next
+  itinerary of the list is Plan B; for a fresh list the client asks again with `after` = now.
+  Local notifications ("leave now") are the app's own; the backend sends no push.
 - **`walk_only`**: `{"distance_m": …, "duration_s": …}` when `from` and `to` are at most
   1000 m apart (straight line), else `null`. It is never one of the `itineraries`.
 - **`lines`, `stops`**: every Line and Stop that a leg names, so the client needs no other call.
