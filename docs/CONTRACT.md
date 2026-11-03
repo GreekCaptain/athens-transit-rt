@@ -14,9 +14,10 @@ Source of truth: `athens-transit-rt/docs/CONTRACT.md`. The frontend keeps a copy
   frontend repo by whoever made it (backend thread opens the copy as a commit or
   issue on the frontend repo).
 
-Revision: 14 (2026-10-31): on an expired GTFS, `delay_s` (and a stop board's `scheduled`) of a
-bus seen leaving on a clear run of OASA's daily schedule is against that run
-(rev 13: `GET /v2/alerts`, service disruptions (OASA notices and strikes); rev 12: `direction` on `/v2` Vehicles; STASY Pattern directions follow branches (M3 airport);
+Revision: 15 (2026-11-03, proposed in PR #44's branch, not live): `GET /v2/plan`, trips from a
+point to a point with walks and transfers ([§9](#9-trip-planner-v2plan-rev-15))
+(rev 14: on an expired GTFS, `delay_s` (and a stop board's `scheduled`) of a
+bus seen leaving on a clear run of OASA's daily schedule is against that run; rev 13: `GET /v2/alerts`, service disruptions (OASA notices and strikes); rev 12: `direction` on `/v2` Vehicles; STASY Pattern directions follow branches (M3 airport);
 rev 11: `/v2/stops/{id}` bus Arrivals include OASA's own predictions; rev 10: live responses send `Access-Control-Expose-Headers: Date`; rev 9: `at_terminus` on `/v1/lines/{line_id}` vehicles and `/v2` Vehicles; rev 8: `GET /v1/stops/{stop_id}` (a stop board); the unified `/v2` API
 ([below](#unified-api-v2-rev-8)); rev 7: `path_speeds` also follow today's traffic (same shape and units); rev 6: `path_speeds` on vehicles (typical speeds ahead); rev 5: `GET /v1/vehicles/tiles/{z}/{x}/{y}`; rev 4: `path_beyond` and `path_stops` on vehicles; rev 3: `GET /v1/vehicles`; `speed` and
 `path` on vehicles)
@@ -647,6 +648,7 @@ All: UTF-8 JSON, `Access-Control-Allow-Origin: *`, gzip, times in Unix seconds, 
 | `GET /v2/vehicles/suburban` | as `/v2/vehicles`, suburban trains (~10, one body) | until `next_update_at`, 5-30 | `proastiakos`: opens the stream |
 | `GET /v2/runs/{id}` | `{run: Run, sources}` | 15 | none |
 | `GET /v2/alerts` (rev 13) | `{alerts: [Alert], updated_at}` | 300 | none (polled in the background) |
+| `GET /v2/plan?from=&to=&after=&last=&n=` (rev 15) | `{service_day, …, itineraries: [Itinerary], walk_only, lines, stops, sources}` ([§9](#9-trip-planner-v2plan-rev-15)) | 60 | none (reads only what is already loaded) |
 
 Shapes not shown above:
 
@@ -790,6 +792,118 @@ Rules:
 - Server-side arrival alerts or push: arrival alerts stay client-side and poll `/v2/stops/{id}`.
   (Service disruptions are `/v2/alerts`, rev 13; a different thing.)
 - MCP tools keep their names; they may switch to the `/v2` model inside without a contract change.
+
+### 9. Trip planner `/v2/plan` (rev 15)
+
+Proposed for issue #44 (the app's evening section «Τελευταία για σπίτι»). Trips from a point to
+a point: a walk to a Stop, one to four rides of any Mode with walks between them, and a walk to
+the end. Design and limits: [superpowers/specs/2026-11-03-trip-planner.md](superpowers/specs/2026-11-03-trip-planner.md).
+
+```
+GET /v2/plan?from=37.97527,23.73552&to=37.87390,23.75400&after=1793227800&last=true&n=3
+```
+
+| Parameter | Required | Meaning |
+|---|---|---|
+| `from`, `to` | yes | `lat,lon`, decimal degrees. Outside Attica (lat 37.6-38.4, lon 23.2-24.2): `400 outside_area`. |
+| `after` | no | Unix seconds; default now. No option leaves `from` before it. It must lie in the current service day (below), or at most 1 h before now: else `400 bad_after`. |
+| `last` | no | `true`: the last `n` options of the service day that leave at or after `after`. Default `false`: the first `n` options that leave at or after `after`. |
+| `n` | no | 1-5, default 3. |
+
+```json
+{
+  "service_day": "2026-11-03",
+  "from": {"lat": 37.97527, "lon": 23.73552},
+  "to": {"lat": 37.8739, "lon": 23.754},
+  "after": 1793227800,
+  "last": true,
+  "itineraries": [
+    {
+      "depart_at": 1793230200, "arrive_at": 1793233329, "duration_s": 3129,
+      "transfers": 1, "walk_m": 610, "modes": ["metro", "bus"],
+      "legs": [
+        {"kind": "walk", "from": {"stop": null, "lat": 37.97527, "lon": 23.73552},
+         "to": {"stop": "stasy:συνταγμα-metro", "lat": 37.97527, "lon": 23.73552},
+         "depart_at": 1793230200, "arrive_at": 1793230320, "distance_m": 0},
+        {"kind": "ride", "line": "stasy:M2", "mode": "metro", "headsign": "Ελληνικό",
+         "run": "stasy:run:1012345:2026-11-03",
+         "from": {"stop": "stasy:συνταγμα-metro", "lat": 37.97527, "lon": 23.73552},
+         "to": {"stop": "stasy:ελληνικο-metro", "lat": 37.89260, "lon": 23.74710},
+         "depart_at": 1793230320, "arrive_at": 1793231340, "hops": 10, "source": "timetable"},
+        {"kind": "walk", "from": {"stop": "stasy:ελληνικο-metro", "lat": 37.8926, "lon": 23.7471},
+         "to": {"stop": "oasa:330032", "lat": 37.8921, "lon": 23.7480},
+         "depart_at": 1793231340, "arrive_at": 1793231539, "distance_m": 95},
+        {"kind": "ride", "line": "oasa:122", "mode": "bus", "headsign": "Σαρωνίδα",
+         "run": "oasa:run:13180045-ΕΣ-...@2340:2026-11-03",
+         "from": {"stop": "oasa:330032", "lat": 37.8921, "lon": 23.748},
+         "to": {"stop": "oasa:330140", "lat": 37.8752, "lon": 23.7531},
+         "depart_at": 1793231700, "arrive_at": 1793232900, "hops": 9, "source": "timetable"},
+        {"kind": "walk", "from": {"stop": "oasa:330140", "lat": 37.8752, "lon": 23.7531},
+         "to": {"stop": null, "lat": 37.8739, "lon": 23.754},
+         "depart_at": 1793232900, "arrive_at": 1793233329, "distance_m": 515}
+      ]
+    }
+  ],
+  "walk_only": null,
+  "lines": {"stasy:M2": {"id": "stasy:M2", "mode": "metro", "...": "a Line"}},
+  "stops": {"stasy:συνταγμα-metro": {"id": "stasy:συνταγμα-metro", "...": "a Stop"}},
+  "sources": [{"id": "oasa", "state": "indicative", "updated_at": 1793205590}]
+}
+```
+
+Rules:
+
+- **Service day**: 03:00 to 03:00 Athens time, as OASA's daily schedule counts it. `service_day`
+  is its date. At 01:30 the service day is yesterday's, and its runs after midnight (bus times
+  "24:15", the night lines) are in it. The planner holds one service day at a time; it changes
+  to the next one after 03:00, once that day's timetables are loaded.
+- **Itinerary**: `legs` alternate walk and ride, and always start and end with a walk (a walk
+  of 0 m when a point is on a Stop). `depart_at` is the start of the first walk, `arrive_at` the
+  end of the last one. `transfers` = rides − 1. `walk_m` is the sum of the walks. `modes`: the
+  Modes of the rides, in ride order, without repeats.
+- **Ride leg**: `line`, `mode`, `headsign` as in the Line and Run; `run` is the Run id
+  (§3), so the client can open `/v2/runs/{id}` for its live state; `hops` is the number of
+  stops the ride moves past, the last one included. `source` is always `timetable` in rev 15:
+  times are the timetable's, never live. A bus on an expired GTFS has the times of OASA's
+  daily schedule (departure from the first stop plus the stop's offset in the GTFS trip that
+  stands for it, as `/v2/stops/{id}` timetable Arrivals have).
+- **Walk leg**: `distance_m` is the straight line × 1.3, whole metres; the walk takes
+  `distance_m` / 1.2 m/s (about 4.3 km/h), rounded up to whole seconds. Walks from `from` and to `to`: Stops up to 1000 m
+  away (straight line). Walks between two rides: Stops up to 500 m apart. A transfer leaves
+  Stop adds 120 s to a walk that starts or ends there (the way through the station). A walk's
+  `arrive_at` is its `depart_at` plus these times; a ride's `depart_at` and `arrive_at` are the
+  timetable's. The gap between a walk's `arrive_at` and the next ride's `depart_at` is waiting:
+  at least 60 s at a transfer, and 0 s before the first ride (the first walk starts as late as it
+  can). A walk after a ride starts at the ride's `arrive_at`.
+- **Which options**: at most 3 transfers (4 rides). An option is left out when another leaves
+  `from` at the same time or later, arrives at `to` at the same time or earlier, and has no
+  more transfers; at equal times and transfers, the one with less walking stays. `last=true`
+  gives the `n` options that leave latest (some may arrive after 03:00); `last=false` the `n`
+  options that leave first, looking at most 3 h past `after`. Both lists are sorted by
+  `depart_at`, then `arrive_at`. Fewer than `n` (or none) when fewer exist: `200` with
+  `itineraries: []` after the last run of the day.
+- **`walk_only`**: `{"distance_m": …, "duration_s": …}` when `from` and `to` are at most
+  1000 m apart (straight line), else `null`. It is never one of the `itineraries`.
+- **`lines`, `stops`**: every Line and Stop that a leg names, so the client needs no other call.
+- **Data** (only what the backend already holds; a plan request never asks an upstream):
+  - `oasa`: the GTFS trips of the service day while the GTFS is current; on an expired GTFS,
+    the runs of OASA's daily schedule as the prefetch cached them. A line with no cached daily
+    schedule has no rides that day.
+  - `stasy`: the STASY timetable of the service day (the same weekday stands in when it has
+    expired: `indicative`).
+  - `proastiakos`: the day's schedule board as `/v2` already loads it. No board: no suburban
+    rides.
+  - `sources` lists all three with the §4 states. `oasa` is `warming_up` when its GTFS is
+    expired and no daily schedule of the service day is cached yet.
+- **Errors**: `400` `bad_from`, `bad_to`, `bad_after`, `bad_n`, `outside_area`; `429 busy` with
+  `Retry-After: 2` when too many plans run at once (a plan costs CPU; the other endpoints are
+  not slowed). Never `503`.
+- **Cache**: `max-age=60` when complete; `max-age=5` when a Source is `warming_up` or `down`
+  (§5). No `ETag`. Clients round `from` and `to` to 4 decimals (about 10 m) and `after` to the
+  minute, so equal questions hit the same cache entry.
+- **Not in rev 15**: live delays in a plan; the "risky" mark of a ride whose line often drops
+  its last runs (needs the seen/missed stats, about 2-3 weeks from 2026-10-30); a Mode filter;
+  `arrive_by`; fares; accessibility; any day but the current service day.
 
 ## Fixtures
 
