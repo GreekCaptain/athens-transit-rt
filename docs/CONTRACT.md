@@ -672,7 +672,7 @@ Shapes not shown above:
  "title": "Μερική προσωρινή τροποποίηση της λεωφορειακής γραμμής 112 στον Δήμο Αγ. Δημητρίου",
  "url": "https://www.oasa.gr/blog/...", "published": 1793336520,
  "from": "2026-10-31", "until": "2026-11-01",
- "modes": ["bus"], "lines": ["oasa:112"], "stops": ["oasa:040054"], "urgent": false}
+ "modes": ["bus"], "lines": ["oasa:112"], "stops": ["oasa:40054"], "urgent": false}
 ```
 
 Rules:
@@ -681,7 +681,9 @@ Rules:
   - `source: "oasa"`: the OASA news feed (`oasa.gr/feed`), every item except tenders
     (category «Διαγωνισμοί»). Buses and trolleys only. `lines`: the line codes that follow
     «γραμμή/γραμμών» in the title, as `/v2` Line ids, only those the GTFS knows. `stops`: the
-    «ΚΣ <code>» stop codes in the text, as Stop ids, only known ones. `from`/`until`: the
+    «ΚΣ <code>» stop codes in the text (the code on the stop sign, GTFS `stop_code`; «ΚΣ 040054»
+    is Stop `oasa:40054`), as Stop ids. A code the GTFS does not know (e.g. a temporary stop) is
+    left out; a code that two stops share gives both. `from`/`until`: the
     earliest and latest date (Athens, `YYYY-MM-DD`) in the opening paragraph of the notice
     (up to «ως εξής»); `null` when it names none. `modes`: `bus`, plus `trolley` when one of
     the lines is a trolley line; both when `lines` is empty (a network-wide notice).

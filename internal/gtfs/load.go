@@ -164,7 +164,8 @@ func (b *builder) stops(t *table) error {
 			return fmt.Errorf("stop %s: %w", t.get("stop_id"), err)
 		}
 		b.stopIdx[t.get("stop_id")] = int32(len(b.feed.Stops))
-		b.feed.Stops = append(b.feed.Stops, Stop{ID: t.get("stop_id"), Name: t.get("stop_name"), Lat: lat, Lon: lon})
+		b.feed.Stops = append(b.feed.Stops, Stop{ID: t.get("stop_id"), Name: t.get("stop_name"),
+			Code: t.get("stop_code"), Lat: lat, Lon: lon})
 	}
 }
 

@@ -1,6 +1,7 @@
 package gtfs
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
