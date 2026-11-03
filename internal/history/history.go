@@ -211,17 +211,22 @@ func oneLine(v string) string {
 
 func micro(deg float64) string { return strconv.FormatInt(int64(math.Round(deg*1e6)), 10) }
 
-// open opens (appends to) the current hour's file.
+// open opens (appends to) the current hour's file. A file of another header (written before an
+// upgrade) is gzipped as it is first; when that fails, nothing is written under its header.
 func (w *Writer) open() bool {
 	w.hour = w.nowHour()
-	f, err := os.OpenFile(filepath.Join(w.dir, w.hour+".csv"), os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o644)
-	if err != nil {
-		w.log.Warn("history: open", "err", err)
-		return false
-	}
-	if err := cutPartialRow(f); err != nil {
-		w.log.Warn("history: open", "err", err)
+	p := filepath.Join(w.dir, w.hour+".csv")
+	f := w.openFile(p)
+	if f != nil && otherHeader(p) {
 		f.Close()
+		w.compressLeftovers("")
+		if f = nil; !exists(p) {
+			f = w.openFile(p)
+		} else {
+			w.log.Warn("history: file of another header not sealed", "file", p)
+		}
+	}
+	if f == nil {
 		return false
 	}
 	w.f, w.bw = f, bufio.NewWriterSize(f, 64<<10)
@@ -230,6 +235,21 @@ func (w *Writer) open() bool {
 		w.bw.WriteString(Header)
 	}
 	return true
+}
+
+// openFile opens p for appending, without an unfinished last row; nil on an error.
+func (w *Writer) openFile(p string) *os.File {
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o644)
+	if err != nil {
+		w.log.Warn("history: open", "err", err)
+		return nil
+	}
+	if err := cutPartialRow(f); err != nil {
+		w.log.Warn("history: open", "err", err)
+		f.Close()
+		return nil
+	}
+	return f
 }
 
 // cutPartialRow drops an unfinished last row (a write that failed half way), so the next row
@@ -295,8 +315,7 @@ func (w *Writer) endHour() {
 	}
 }
 
-// compressLeftovers gzips every plain .csv except the current hour's (unless it has another
-// header: written before an upgrade, it must not get rows of other columns). Each gets its own
+// compressLeftovers gzips every plain .csv except the current hour's. Each gets its own
 // archive (hour.csv.gz, then hour.1.csv.gz, ... after a restart within the hour), each with its
 // header. Retries are idempotent: the CSV is first renamed to .part, and a .part whose archive
 // exists was already gzipped.
@@ -304,7 +323,7 @@ func (w *Writer) compressLeftovers(current string) {
 	names, _ := filepath.Glob(filepath.Join(w.dir, "*.csv"))
 	for _, p := range names {
 		hour := strings.TrimSuffix(filepath.Base(p), ".csv")
-		if hour == current && !otherHeader(p) {
+		if hour == current {
 			continue
 		}
 		for k := 0; ; k++ {

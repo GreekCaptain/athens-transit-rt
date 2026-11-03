@@ -148,7 +148,9 @@ func historyOf(t *testing.T, day time.Time, daily *telematics.DailySchedule, fix
 	var h *history.Writer
 	departApp(t, day, daily, fixes, func(a *App) {
 		var err error
-		if h, err = history.Open(dir, 1<<30, 24*time.Hour, a.now, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		// A clock of its own: departApp moves the App's while the writer runs.
+		at := time.Date(day.Year(), day.Month(), day.Day(), 10, 50, 0, 0, gtfs.Athens)
+		if h, err = history.Open(dir, 1<<30, 24*time.Hour, func() time.Time { return at }, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 			t.Fatal(err)
 		}
 		a.hist = h

@@ -27,8 +27,8 @@ a line poll:
 | `start_delay_s` | int32 | added 2026-11: seconds the bus left after `run_start` (negative: early); empty when not known |
 
 Each file has its header, and readers look columns up by name. A file of the current hour
-written with an older header is gzipped as it is when the writer opens, so new rows never go
-under a header of other columns.
+written with an older header is cut of a half row and gzipped as it is when the writer opens it,
+so new rows never go under a header of other columns (if it cannot be moved, rows are lost and counted).
 
 **Dedup:** OASA repeats a fix until the vehicle reports again, so each poll returns many fixes
 already seen. Keep a map `veh → last fix_t` (bounded by the ~1,000 vehicles on the road) and

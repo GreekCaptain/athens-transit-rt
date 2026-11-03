@@ -154,6 +154,37 @@ func TestSealsAFileOfAnOldHeader(t *testing.T) {
 	}
 }
 
+// An old-header file a crash left with half a row is cut before it is gzipped, as an append
+// would have cut it: a broken quote must not make the archive unreadable.
+func TestSealCutsAPartialRow(t *testing.T) {
+	dir, now := t.TempDir(), t0
+	const old = "fix_t,line,route_code,veh,lat,lon,gtfs,trip_id,shape_id,s_m,delay_s\n"
+	os.WriteFile(filepath.Join(dir, "2026-10-06T08.csv"), []byte(old+"1,,,A,0,0,,,,-1,\n2,,,A,0,0,,\"T"), 0o644)
+	w, _ := newWriter(dir, 1<<30, 30*24*time.Hour, clock(&now), quiet)
+	w.write(Row{FixT: 3, Veh: "A", SM: -1})
+	w.closeFile()
+	if got := read(t, filepath.Join(dir, "2026-10-06T08.csv.gz")); got != old+"1,,,A,0,0,,,,-1,\n" {
+		t.Fatalf("old archive %q", got)
+	}
+}
+
+// When the old-header file cannot be moved away, rows are lost (and counted), never written
+// under the old header.
+func TestUnsealedOldHeaderTakesNoRows(t *testing.T) {
+	dir, now := t.TempDir(), t0
+	const old = "fix_t,line,route_code,veh,lat,lon,gtfs,trip_id,shape_id,s_m,delay_s\n"
+	p := filepath.Join(dir, "2026-10-06T08.csv")
+	os.WriteFile(p, []byte(old+"1,,,A,0,0,,,,-1,\n"), 0o644)
+	os.Chmod(dir, 0o555) // no rename in the directory; the file itself stays writable
+	defer os.Chmod(dir, 0o755)
+	w, _ := newWriter(dir, 1<<30, 30*24*time.Hour, clock(&now), quiet)
+	w.write(Row{FixT: 2, Veh: "A", SM: -1})
+	w.closeFile()
+	if got := read(t, p); got != old+"1,,,A,0,0,,,,-1,\n" || w.Lost() != 1 {
+		t.Fatalf("file %q, lost %d", got, w.Lost())
+	}
+}
+
 // A crash after the archive was written but before the sealed CSV was removed: the retry only
 // removes it.
 func TestCompressionRetryIsIdempotent(t *testing.T) {
