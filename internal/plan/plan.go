@@ -407,6 +407,16 @@ type Result struct {
 	WalkOnly    *WalkOnly
 }
 
+// Walk is the walk from `from` to `to` when they are at most 1000 m apart (straight line), else nil.
+func Walk(from, to LatLon) *WalkOnly {
+	d := geo.Dist(geo.XY(from.Lat, from.Lon), geo.XY(to.Lat, to.Lon))
+	if d > AccessM {
+		return nil
+	}
+	wd := walkDist(d)
+	return &WalkOnly{DistanceM: int(wd), DurationS: int64(walkSecs(wd))}
+}
+
 // labels are one query's RAPTOR labels, reused through the Timetable's pool. Round k of r holds
 // the arrivals by a k-th ride; round k of b the earliest boarding after k rides (0: the walk
 // from `from`).
@@ -482,10 +492,7 @@ func (t *Timetable) place(p int32) Place {
 func (t *Timetable) Plan(q Query) Result {
 	res := Result{Itineraries: []Itinerary{}}
 	from, to := geo.XY(q.From.Lat, q.From.Lon), geo.XY(q.To.Lat, q.To.Lon)
-	if d := geo.Dist(from, to); d <= AccessM {
-		wd := walkDist(d)
-		res.WalkOnly = &WalkOnly{DistanceM: int(wd), DurationS: int64(walkSecs(wd))}
-	}
+	res.WalkOnly = Walk(q.From, q.To)
 	n := min(max(q.N, 1), MaxN)
 	if len(t.rStopAt) < 2 {
 		return res

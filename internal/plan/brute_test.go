@@ -156,3 +156,40 @@ func TestAgainstBruteForce(t *testing.T) {
 		t.Errorf("only %d queries with options: the random networks are too sparse", checked)
 	}
 }
+
+// Plans share a Timetable and its label pool: the same answers from 8 goroutines (run with -race).
+func TestConcurrentPlans(t *testing.T) {
+	rng := rand.New(rand.NewPCG(3, 4))
+	in := randomInput(rng)
+	tt := Build(in)
+	var qs []Query
+	var want [][]triple
+	for range 50 {
+		q := Query{From: ll(rng.Float64()*3000, rng.Float64()*3000), To: ll(rng.Float64()*3000, rng.Float64()*3000),
+			After: at(hm(9, 30+rng.IntN(120))), Last: rng.IntN(2) == 0, N: 3}
+		qs = append(qs, q)
+		want = append(want, bruteForce(in, q))
+	}
+	done := make(chan string, 8)
+	for g := range 8 {
+		go func() {
+			for i := range qs {
+				q := qs[(i+g)%len(qs)]
+				var got []triple
+				for _, it := range tt.Plan(q).Itineraries {
+					got = append(got, triple{it.DepartAt, it.ArriveAt, it.Transfers + 1})
+				}
+				if !slices.Equal(got, want[(i+g)%len(qs)]) {
+					done <- fmt.Sprintf("query %d: %v want %v", (i+g)%len(qs), got, want[(i+g)%len(qs)])
+					return
+				}
+			}
+			done <- ""
+		}()
+	}
+	for range 8 {
+		if msg := <-done; msg != "" {
+			t.Error(msg)
+		}
+	}
+}

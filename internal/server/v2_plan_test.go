@@ -224,6 +224,11 @@ func TestV2PlanNotBuilt(t *testing.T) {
 	if code != 200 || ma != 5 || p.Itineraries == nil || len(p.Itineraries) != 0 {
 		t.Fatalf("%d max-age %d %s", code, ma, asJSON(p))
 	}
+	// walk_only does not need the timetable.
+	v2get(t, a, "/v2/plan?from="+atS0+"&to=37.98,23.71", &p)
+	if p.WalkOnly == nil {
+		t.Errorf("walk_only %s before the first build", asJSON(p.WalkOnly))
+	}
 }
 
 // An expired GTFS: oasa is warming_up until a daily schedule of the service day is cached; then
@@ -390,5 +395,71 @@ func TestV2PlanFixture(t *testing.T) {
 	old, err := os.ReadFile(path)
 	if err != nil || !bytes.Equal(old, buf.Bytes()) {
 		t.Fatalf("%s differs from the response (PLAN_FIXTURE=1 go test -run TestV2PlanFixture rewrites it): %v", path, err)
+	}
+}
+
+// Review round 1: after the service day's calendar midnight the daily cache moves on to the next
+// day, so a rebuild would drop D's runs: none happens before 03:00. Before midnight a new or a
+// completed (partial to full) daily schedule rebuilds after 10 min; a lost one does not.
+func TestPlanRebuildRules(t *testing.T) {
+	now := time.Date(2026, 10, 12, 22, 0, 0, 0, gtfs.Athens)
+	a := planAt(t, &now, withDaily(t, "10:45", "23:50", "24:30"))
+	id := "oasa:run:T05@2430:2026-10-12"
+	first := a.planner.snap()
+	if _, ok := first.tt.Run(id); !ok {
+		t.Fatalf("%s not in the timetable", id)
+	}
+	setEntry := func(f func(*dailyEntry)) {
+		a.dailyMu.Lock()
+		e := a.dailyCache["L"]
+		f(&e)
+		a.dailyCache["L"] = e
+		a.dailyMu.Unlock()
+	}
+	// Partial then full, 20 min later: rebuilt.
+	setEntry(func(e *dailyEntry) { e.partial = true })
+	if err := a.buildPlan(now); err != nil {
+		t.Fatal(err)
+	}
+	built := a.planner.snap()
+	setEntry(func(e *dailyEntry) { e.partial = false })
+	now = now.Add(20 * time.Minute)
+	a.planTick(now)
+	if a.planner.snap() == built {
+		t.Error("a daily schedule completed (partial to full): no rebuild")
+	}
+	// Lost (a failed retry): no rebuild.
+	built = a.planner.snap()
+	setEntry(func(e *dailyEntry) { e.ok = false })
+	now = now.Add(20 * time.Minute)
+	a.planTick(now)
+	if a.planner.snap() != built {
+		t.Error("a daily schedule lost: rebuilt without it")
+	}
+	setEntry(func(e *dailyEntry) { e.ok = true })
+	// After midnight the entry holds the next day's runs; the STASY timetable appears too.
+	now = time.Date(2026, 10, 13, 0, 40, 0, 0, gtfs.Athens)
+	setEntry(func(e *dailyEntry) { e.day = "2026-10-13" })
+	a.planTick(now)
+	if s := a.planner.snap(); s != built {
+		t.Error("rebuilt after midnight")
+	}
+	if _, ok := a.planner.snap().tt.Run(id); !ok {
+		t.Errorf("%s gone after midnight", id)
+	}
+}
+
+// The service day changes at 03:00 on DST days too, the same instant for planNoon and planBounds.
+func TestPlanDayBoundsDST(t *testing.T) {
+	for _, from := range []time.Time{time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC), time.Date(2027, 3, 27, 0, 0, 0, 0, time.UTC)} {
+		for at := from; at.Before(from.Add(72 * time.Hour)); at = at.Add(5 * time.Minute) {
+			start, end := planBounds(planNoon(at))
+			if at.Before(start) || !at.Before(end) {
+				t.Fatalf("%v (%v): service day %v..%v", at, at.In(gtfs.Athens), start, end)
+			}
+			if _, prevEnd := planBounds(planNoon(start.Add(-time.Second))); !prevEnd.Equal(start) {
+				t.Fatalf("day before %v ends %v", start, prevEnd)
+			}
+		}
 	}
 }

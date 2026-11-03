@@ -53,6 +53,7 @@ type planSnap struct {
 type planKey struct {
 	feed   *gtfs.Feed
 	daily  int // lines with a daily schedule of the service day cached
+	full   int // of them, those not partial (a retry completed one)
 	stasy  *rail.STASY
 	boards [2]bool // the suburban boards of D and D+1 are cached (a refresh of one is no new input)
 }
@@ -81,13 +82,15 @@ func (p *planner) acquire(ctx context.Context) bool {
 
 func (p *planner) release() { <-p.sem }
 
-// planNoon is the noon of the service day (03:00 to 03:00 Athens time) that holds now.
+// planNoon is the noon of the service day (03:00 to 03:00 Athens time) that holds now, by the
+// same 03:00 instant as planBounds (03:00 happens twice when DST ends).
 func planNoon(now time.Time) time.Time {
 	l := now.In(gtfs.Athens)
-	if l.Hour() < 3 {
-		l = l.AddDate(0, 0, -1)
+	noon := time.Date(l.Year(), l.Month(), l.Day(), 12, 0, 0, 0, gtfs.Athens)
+	if start, _ := planBounds(noon); now.Before(start) {
+		noon = noon.AddDate(0, 0, -1)
 	}
-	return time.Date(l.Year(), l.Month(), l.Day(), 12, 0, 0, 0, gtfs.Athens)
+	return noon
 }
 
 // planBounds are the first and the last instants (exclusive) of the service day of noon.
@@ -149,9 +152,15 @@ func (a *App) planTick(now time.Time) {
 		start, _ := planBounds(noon)
 		due = !expired(w.feed, noon) || a.prefetchedDay() == noon.Format(time.DateOnly) ||
 			!now.Before(start.Add(planLateBuild-planDayStart))
+	case !gtfs.Midnight(now).Equal(gtfs.Midnight(noon)):
+		// Past midnight the caches move on to the next calendar day (a line's daily schedule, the
+		// suburban board): a rebuild would lose the service day's runs, so none before 03:00.
 	default:
 		k := a.planKeyOf(noon)
-		due = k != s.key && (now.Sub(s.built) >= planRebuild || k.stasy != nil && s.key.stasy == nil ||
+		// A daily schedule lost (a failed retry) is no new input: the timetable keeps its runs.
+		changed := k.feed != s.key.feed || k.stasy != s.key.stasy || k.boards != s.key.boards ||
+			k.daily > s.key.daily || k.full > s.key.full
+		due = changed && (now.Sub(s.built) >= planRebuild || k.stasy != nil && s.key.stasy == nil ||
 			k.feed != s.key.feed)
 	}
 	if due {
@@ -178,6 +187,9 @@ func (a *App) planKeyOf(noon time.Time) planKey {
 	for _, e := range a.dailyCache {
 		if e.day == day && e.ok {
 			k.daily++
+			if !e.partial {
+				k.full++
+			}
 		}
 	}
 	a.dailyMu.Unlock()
@@ -565,10 +577,11 @@ func (a *App) handleV2Plan(w http.ResponseWriter, r *http.Request) {
 	if s == nil || !model.Complete(src) {
 		maxAge = v2IncompleteAge
 	}
+	pf, pt := plan.LatLon{Lat: from.Lat, Lon: from.Lon}, plan.LatLon{Lat: to.Lat, Lon: to.Lon}
+	body.WalkOnly = plan.Walk(pf, pt)
 	if s != nil {
-		res := s.tt.Plan(plan.Query{From: plan.LatLon{Lat: from.Lat, Lon: from.Lon}, To: plan.LatLon{Lat: to.Lat, Lon: to.Lon},
-			After: after, Last: last, N: n})
-		body.Itineraries, body.WalkOnly = res.Itineraries, res.WalkOnly
+		res := s.tt.Plan(plan.Query{From: pf, To: pt, After: after, Last: last, N: n})
+		body.Itineraries = res.Itineraries
 		for _, it := range res.Itineraries {
 			for _, l := range it.Legs {
 				if l.Kind == plan.KindRide {
