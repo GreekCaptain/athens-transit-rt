@@ -14,9 +14,11 @@ Source of truth: `athens-transit-rt/docs/CONTRACT.md`. The frontend keeps a copy
   frontend repo by whoever made it (backend thread opens the copy as a commit or
   issue on the frontend repo).
 
-Revision: 14 (2026-10-31): on an expired GTFS, `delay_s` (and a stop board's `scheduled`) of a
-bus seen leaving on a clear run of OASA's daily schedule is against that run
-(rev 13: `GET /v2/alerts`, service disruptions (OASA notices and strikes); rev 12: `direction` on `/v2` Vehicles; STASY Pattern directions follow branches (M3 airport);
+Revision: 15 (2026-11-03): OASA Patterns and bus Vehicles get both directions, 0 and 1 (the
+GTFS has no `direction_id`, so all were 0); metro M2 `headsign` is where the train goes, not
+where it starts
+(rev 14: on an expired GTFS, `delay_s` (and a stop board's `scheduled`) of a
+bus seen leaving on a clear run of OASA's daily schedule is against that run; rev 13: `GET /v2/alerts`, service disruptions (OASA notices and strikes); rev 12: `direction` on `/v2` Vehicles; STASY Pattern directions follow branches (M3 airport);
 rev 11: `/v2/stops/{id}` bus Arrivals include OASA's own predictions; rev 10: live responses send `Access-Control-Expose-Headers: Date`; rev 9: `at_terminus` on `/v1/lines/{line_id}` vehicles and `/v2` Vehicles; rev 8: `GET /v1/stops/{stop_id}` (a stop board); the unified `/v2` API
 ([below](#unified-api-v2-rev-8)); rev 7: `path_speeds` also follow today's traffic (same shape and units); rev 6: `path_speeds` on vehicles (typical speeds ahead); rev 5: `GET /v1/vehicles/tiles/{z}/{x}/{y}`; rev 4: `path_beyond` and `path_stops` on vehicles; rev 3: `GET /v1/vehicles`; `speed` and
 `path` on vehicles)
@@ -711,8 +713,14 @@ Rules:
   (key absent), as rev 5 drops the path keys.
 - Metro/tram vehicles are placed when `/v2/vehicles/rail` is built (per request, cached 15 s);
   their `knots` keep them moving.
-- Pattern `direction` (rev 12): every Line has two directions, 0 and 1, never more. OASA and
-  suburban: the GTFS / corridor direction. Metro/tram: the most common Pattern is 0; each other
+- Pattern `direction` (rev 12): every Line has two directions, 0 and 1, never more. Suburban:
+  the corridor direction. OASA (rev 15): OASA's GTFS has no `direction_id`, so the direction
+  comes from where each Pattern runs: a Pattern whose first and last Stops lie nearer the ends of
+  the busiest Pattern than its swapped ends runs its way (a short turn included); 0 is the way
+  towards the place after the last " - " of the Line name, the way `/v1/lines/{id}/schedule`
+  calls 0; a loop Line is 0. When neither the name nor the headsigns tell the places apart (no
+  " - " in the name, or headsigns that name both or neither), the busiest Pattern's way is 0 and
+  may then differ from `/v1`. Metro/tram: the most common Pattern is 0; each other
   Pattern is 0 or 1 by the order of two Stops it shares with a Pattern already decided, so a
   branch that shares one Stop with the main Pattern (M3 airport) still gets the right one. M3:
   every Pattern towards ΕΛ. ΒΕΝΙΖΕΛΟΣ or Δ. ΠΛΑΚΕΝΤΙΑΣ is 1, every one towards ΔΗΜΟΤΙΚΟ ΘΕΑΤΡΟ

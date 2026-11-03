@@ -152,9 +152,16 @@ func (o *oasaAdapter) Line(id string) (*LineDetail, error) {
 		return nil, err
 	}
 	lf := staticsite.LineFileOf(w.feed, native)
+	dirs := w.shapeDirs(native)
 	d := &LineDetail{Line: o.lineModel(w, native), Patterns: []model.Pattern{}, Stops: map[string]model.Stop{}}
 	for shape, v := range lf.Variants {
-		p := model.Pattern{ID: oasaPrefix + shape, Headsign: v.Headsign, Direction: v.Direction, Shape: v.Shape,
+		// The GTFS has no direction_id: the shape's way round gives the direction (v.Direction is
+		// the GTFS 0, kept only for a shape the direction map does not know).
+		dir := v.Direction
+		if got, ok := dirs[w.feed.ShapeIndex(shape)]; ok {
+			dir = got
+		}
+		p := model.Pattern{ID: oasaPrefix + shape, Headsign: v.Headsign, Direction: dir, Shape: v.Shape,
 			Stops: make([]string, len(v.Stops))}
 		for i, s := range v.Stops {
 			p.Stops[i] = oasaPrefix + s
@@ -323,20 +330,27 @@ func routeHeadsign(w *world, line, routeCode string) string {
 	return ""
 }
 
-// vehicle is a /v1 vehicle of a line poll in the /v2 shape.
-func vehicleV2(f *gtfs.Feed, mode, line string, r *match.Result, v *Vehicle, b boardPos) model.Vehicle {
+// vehicle is a /v1 vehicle of a line poll in the /v2 shape. The direction of the run is the
+// direction of its shape (dirs), the GTFS direction_id being 0 on every OASA trip (rt#45).
+func vehicleV2(f *gtfs.Feed, dirs map[int32]int, mode, line string, r *match.Result, v *Vehicle, b boardPos) model.Vehicle {
 	out := model.Vehicle{ID: oasaPrefix + v.ID, Line: oasaPrefix + line, Mode: mode, Label: model.Ptr(v.ID),
 		Position: model.Position{Kind: model.GPS, Lat: v.Lat, Lon: v.Lon, Bearing: v.Bearing, At: v.PositionAt},
 		DelayS:   v.DelayS, AtTerminus: v.AtTerminus, Source: oasaNS}
+	dir := func(t *gtfs.Trip) int {
+		if d, ok := dirs[t.Shape]; ok {
+			return d
+		}
+		return int(t.Dir)
+	}
 	if r.Matched() {
 		t := f.Trip(r.Trip)
 		out.Run = model.Ptr(model.RunID(oasaNS, t.ID, r.Day, gtfs.Athens))
 		out.Headsign = model.Ptr(f.Headsign(t))
-		out.Direction = model.Ptr(int(t.Dir))
+		out.Direction = model.Ptr(dir(t))
 	} else if b.ok {
 		t := f.Trip(b.trip)
 		out.Headsign = model.Ptr(f.Headsign(t))
-		out.Direction = model.Ptr(int(t.Dir))
+		out.Direction = model.Ptr(dir(t))
 	}
 	if v.NextStopID != nil {
 		out.NextStop = model.Ptr(oasaPrefix + *v.NextStopID)
@@ -370,9 +384,13 @@ func (o *oasaAdapter) LineVehicles(id string, now time.Time) (*LineVehicles, err
 	warming, d := a.warming[line], a.lines[line]
 	mode := w.lineModes()[line]
 	conv := func() []model.Vehicle {
+		var dirs map[int32]int
+		if d.feed == w.feed {
+			dirs = w.shapeDirs(line)
+		}
 		out := make([]model.Vehicle, len(d.vehicles))
 		for i := range d.vehicles {
-			out[i] = vehicleV2(d.feed, mode, line, &d.results[i], &d.vehicles[i], d.board[i])
+			out[i] = vehicleV2(d.feed, dirs, mode, line, &d.results[i], &d.vehicles[i], d.board[i])
 		}
 		return out
 	}
@@ -418,7 +436,7 @@ func (o *oasaAdapter) Vehicles(now time.Time) ([]model.Vehicle, error) {
 			if now.Unix()-v.PositionAt > int64(vehicleMaxAge/time.Second) {
 				continue
 			}
-			mv := vehicleV2(d.feed, modes[id], id, &d.results[i], v, d.board[i])
+			mv := vehicleV2(d.feed, w.shapeDirs(id), modes[id], id, &d.results[i], v, d.board[i])
 			mv.Position.Lat, mv.Position.Lon = round5(v.Lat), round5(v.Lon)
 			if j, ok := at[v.ID]; !ok {
 				at[v.ID] = len(out)

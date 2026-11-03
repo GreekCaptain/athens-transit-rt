@@ -335,7 +335,8 @@ func ParseSTASY(dir string) (*STASY, error) {
 		}
 	}
 	// STASY leaves trip_headsign empty on most trips, so the headsign is taken from the last
-	// stop of the trip: that is the name a passenger reads on the platform.
+	// stop of the trip: that is the name a passenger reads on the platform. STASY also names
+	// its M2 trips after their first stop (rt#34): such a headsign becomes the last stop.
 	s.tripStops = make([][]stasyStopTime, len(s.trips))
 	lastStop := make([]int32, len(s.trips))
 	lastSeq := make([]int32, len(s.trips))
@@ -393,8 +394,16 @@ func ParseSTASY(dir string) (*STASY, error) {
 		sort.SliceStable(st, func(a, b int) bool { return st[a].seq < st[b].seq })
 	}
 	for i := range s.trips {
-		if s.trips[i].Headsign == "" && hasStop[i] {
+		switch {
+		case s.trips[i].Headsign == "" && hasStop[i]:
 			s.trips[i].Headsign = s.Stops[lastStop[i]].Name
+		case s.trips[i].Headsign != "" && len(s.tripStops[i]) > 0:
+			// The first stop names the trip, not where it goes: the last stop is the headsign.
+			first := s.Stops[s.tripStops[i][0].Stop].Name
+			last := s.Stops[lastStop[i]].Name
+			if Fold(s.trips[i].Headsign) == Fold(first) && Fold(s.trips[i].Headsign) != Fold(last) {
+				s.trips[i].Headsign = last
+			}
 		}
 	}
 	for i := range s.services {

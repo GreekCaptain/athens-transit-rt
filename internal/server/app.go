@@ -69,6 +69,8 @@ type world struct {
 
 	modesOnce sync.Once
 	modes     map[string]string // line -> mode (/v2), built on first use
+	dirsOnce  sync.Once
+	dirs      map[string]map[int32]int // line -> shape -> direction (0/1), built on first use
 }
 
 // lineData is the last published state of one line.
