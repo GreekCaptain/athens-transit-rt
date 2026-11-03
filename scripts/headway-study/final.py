@@ -51,7 +51,8 @@ Bg['sb']=pd.cut(Bg.spread/60,[-1,3,6,10,999],labels=['≤3','3-6','6-10','>10'])
 print(Bg.groupby('sb',observed=True).apply(lambda g:pd.Series({'share_of_cohort':len(g)/len(B),'H_med':g.a_hist.median(),'H_p90':g.a_hist.quantile(.9),'H≤5':(g.a_hist<=5).mean(),'S_med':g.a_sched.median(),'S_p90':g.a_sched.quantile(.9),'S≤5':(g.a_sched<=5).mean()})).round(2).to_string())
 r=B[B.nx<3]; print('  gate fails (days<3): share',f"{len(r)/len(B):.0%}")
 for dt,g in Bg.groupby('dtype'):
-    t=g[g.spread<=180]; print(f"  {dt}: rule (days>=3, IQR<=3′) fires on {len(t)/max(1,len(B[B.dtype==dt])):.0%} of cohort; H med {t.a_hist.median():.1f} p90 {t.a_hist.quantile(.9):.1f} ≤5′ {(t.a_hist<=5).mean():.0%}; S med {t.a_sched.median():.1f}")
+    t=g[g.spread<=180]; allnl=N[(N.dtype==dt)&(N.nx>=3)&(N.spread<=180)]
+    print(f"  {dt}: rule (days>=3, IQR<=3′) fires on {len(t)/max(1,len(B[B.dtype==dt])):.0%} of cohort, {len(allnl)/max(1,len(N[N.dtype==dt])):.0%} of ALL no-live queries (incl. censored), of which censored {allnl.truth.isna().mean():.0%}; H med {t.a_hist.median():.1f} p90 {t.a_hist.quantile(.9):.1f} ≤5′ {(t.a_hist<=5).mean():.0%}; S med {t.a_sched.median():.1f}")
 print('## E. per line (cohort C)')
 print(B.groupby('line').apply(lambda g:pd.Series({'n':len(g),'sched':g.a_sched.median(),'hist':g.a_hist.median(),'sched≤5':(g.a_sched<=5).mean(),'hist≤5':(g.a_hist<=5).mean()})).round(2).to_string())
 print('## F. outcome-conditioned: share of cohort where truth came >20 min after both S and H', f"{(((B.truth-B.sched)>1200)&((B.truth-B['hist'])>1200)).mean():.0%}")

@@ -70,109 +70,109 @@ h
      med    q1     q3   n  sched_med
 h                                   
 25  65.0  60.0  350.0  12       65.0
-## C0. coverage, no live bus: queries 60720  censored (no tracked pass within 3 h) 59.8%
+## C0. coverage, no live bus: queries 60671  censored (no tracked pass within 3 h) 59.9%
    sched: predicts in 48% of no-live queries; predicts although censored: 7779
-   corr: predicts in 44% of no-live queries; predicts although censored: 6674
-   hist: predicts in 44% of no-live queries; predicts although censored: 6099
-   gap: predicts in 29% of no-live queries; predicts although censored: 4520
-   training days with no pass within 3 h (not outage), share of training-day lookups: 63.9%
-## C. same cohort: no live bus, S, C and H all predict, n= 19261
-  ALL 19261
-     sched: med 13.6 p75 41.6 p90 77.6 ≤5′ 30%
-     corr: med 11.1 p75 42.1 p90 81.8 ≤5′ 40%
-     hist: med 10.5 p75 36.5 p90 78.0 ≤5′ 39%
-  dense 4500
-     sched: med 21.7 p75 56.0 p90 109.8 ≤5′ 21%
-     corr: med 23.5 p75 58.3 p90 110.2 ≤5′ 30%
-     hist: med 22.3 p75 55.5 p90 108.7 ≤5′ 30%
-  medium 7756
-     sched: med 17.9 p75 42.0 p90 82.3 ≤5′ 26%
-     corr: med 16.5 p75 39.1 p90 80.0 ≤5′ 36%
-     hist: med 14.5 p75 38.0 p90 81.2 ≤5′ 37%
-  night 2684
-     sched: med 5.8 p75 14.1 p90 62.6 ≤5′ 48%
-     corr: med 3.5 p75 8.3 p90 62.5 ≤5′ 65%
-     hist: med 3.9 p75 11.1 p90 61.2 ≤5′ 58%
-  sparse 4321
-     sched: med 8.4 p75 36.5 p90 60.2 ≤5′ 37%
-     corr: med 7.3 p75 44.0 p90 71.5 ≤5′ 42%
-     hist: med 7.7 p75 28.9 p90 59.8 ≤5′ 43%
-  H closer than S by >1 min: 54%  farther: 32%
-## C2. G paired with H and S (queries where all three predict), n= 12478
-     sched: med 23.4 p75 51.0 p90 97.6 ≤5′ 17%
-     hist: med 21.7 p75 48.0 p90 96.4 ≤5′ 26%
-     gap: med 28.2 p75 57.5 p90 102.6 ≤5′ 10%
+   corr: predicts in 44% of no-live queries; predicts although censored: 6652
+   hist: predicts in 48% of no-live queries; predicts although censored: 6500
+   gap: predicts in 29% of no-live queries; predicts although censored: 4531
+   training days with no pass within 3 h (not outage), share of training-day lookups: 57.5%
+## C. same cohort: no live bus, S, C and H all predict, n= 18970
+  ALL 18970
+     sched: med 13.6 p75 42.0 p90 79.0 ≤5′ 31%
+     corr: med 12.3 p75 45.3 p90 83.8 ≤5′ 40%
+     hist: med 10.8 p75 37.1 p90 78.0 ≤5′ 39%
+  dense 4454
+     sched: med 21.7 p75 56.3 p90 110.0 ≤5′ 20%
+     corr: med 24.3 p75 58.5 p90 111.2 ≤5′ 30%
+     hist: med 22.9 p75 55.9 p90 109.1 ≤5′ 30%
+  medium 7576
+     sched: med 18.3 p75 42.3 p90 83.2 ≤5′ 25%
+     corr: med 17.3 p75 39.8 p90 80.9 ≤5′ 36%
+     hist: med 14.9 p75 38.8 p90 82.5 ≤5′ 36%
+  night 2856
+     sched: med 5.5 p75 14.1 p90 62.6 ≤5′ 49%
+     corr: med 3.6 p75 11.2 p90 61.5 ≤5′ 62%
+     hist: med 3.9 p75 11.6 p90 59.9 ≤5′ 58%
+  sparse 4084
+     sched: med 8.3 p75 35.8 p90 59.8 ≤5′ 39%
+     corr: med 8.4 p75 49.3 p90 78.5 ≤5′ 42%
+     hist: med 7.5 p75 28.3 p90 58.9 ≤5′ 43%
+  H closer than S by >1 min: 53%  farther: 32%
+## C2. G paired with H and S (queries where all three predict), n= 12327
+     sched: med 23.8 p75 51.7 p90 97.9 ≤5′ 17%
+     hist: med 22.1 p75 48.3 p90 97.8 ≤5′ 26%
+     gap: med 28.9 p75 58.2 p90 103.6 ≤5′ 10%
 ## D. calibration with the proposed gate (days>=3), same cohort as C
-  gate days>=3 keeps 83%
+  gate days>=3 keeps 85%
       share_of_cohort  H_med   H_p90   H≤5  S_med   S_p90   S≤5
 sb                                                             
-≤3               0.21   2.73   60.29  0.63   5.72   61.83  0.48
-3-6              0.19   6.68   90.88  0.44  10.58   88.68  0.35
-6-10             0.12  19.95  111.90  0.32  23.57  112.76  0.24
->10              0.30  21.18   87.58  0.25  22.40   85.32  0.19
-  gate fails (days<3): share 17%
-  sun: rule (days>=3, IQR<=3′) fires on 30% of cohort; H med 4.2 p90 65.6 ≤5′ 51%; S med 8.8
-  wd: rule (days>=3, IQR<=3′) fires on 23% of cohort; H med 2.1 p90 56.3 ≤5′ 68%; S med 4.5
+≤3               0.21   2.55   58.51  0.64   5.53   55.95  0.48
+3-6              0.19   7.53   88.02  0.43  11.07   86.52  0.35
+6-10             0.12  21.00  113.12  0.30  24.67  113.21  0.23
+>10              0.32  19.92   82.65  0.27  21.64   83.75  0.21
+  gate fails (days<3): share 15%
+  sun: rule (days>=3, IQR<=3′) fires on 30% of cohort, 12% of ALL no-live queries (incl. censored), of which censored 6%; H med 4.2 p90 65.6 ≤5′ 51%; S med 8.9
+  wd: rule (days>=3, IQR<=3′) fires on 22% of cohort, 15% of ALL no-live queries (incl. censored), of which censored 23%; H med 2.0 p90 46.8 ≤5′ 69%; S med 4.3
 ## E. per line (cohort C)
            n  sched   hist  sched≤5  hist≤5
 line                                       
-040   1708.0  19.54  18.04     0.14    0.32
-11    2115.0  40.90  34.58     0.07    0.11
-224   2500.0   9.12   4.03     0.40    0.54
-309Β  2002.0   8.16   7.81     0.42    0.41
-421   1642.0  14.82  12.72     0.31    0.38
-500    722.0   6.38   4.05     0.37    0.64
-550   1199.0  15.38  14.21     0.26    0.37
-608   1116.0  21.48  23.25     0.33    0.29
+040   1695.0  19.47  18.28     0.13    0.32
+11    2117.0  40.90  34.63     0.07    0.12
+224   2368.0   9.91   4.28     0.39    0.53
+309Β  1896.0   8.00   7.67     0.43    0.41
+421   1592.0  14.82  13.22     0.32    0.38
+500    787.0   6.38   4.78     0.38    0.54
+550   1179.0  15.20  13.70     0.26    0.38
+608   1102.0  21.28  23.73     0.34    0.29
 721   1499.0  11.02   8.02     0.23    0.42
-790   1962.0   4.95   3.80     0.52    0.57
-914   2319.0   8.47   7.28     0.33    0.44
-Χ95    477.0  57.92  55.83     0.04    0.05
+790   2069.0   4.88   3.47     0.53    0.59
+914   2188.0   8.40   7.24     0.35    0.44
+Χ95    478.0  57.92  55.77     0.04    0.05
 ## F. outcome-conditioned: share of cohort where truth came >20 min after both S and H 32%
 ## daily.py
-ALL    12668 sched: med 12.6 p90 85.7 ≤5′ 33%  daily: med 15.4 p90 89.7 ≤5′ 28%  hist: med 9.0 p90 85.5 ≤5′ 41%
+ALL    12668 sched: med 12.6 p90 85.7 ≤5′ 33%  daily: med 15.4 p90 89.7 ≤5′ 28%  hist: med 9.0 p90 85.2 ≤5′ 41%
 dense  2669 sched: med 24.4 p90 120.7 ≤5′ 21%  daily: med 22.5 p90 119.5 ≤5′ 25%  hist: med 21.4 p90 119.3 ≤5′ 35%
 medium 4105 sched: med 19.9 p90 97.7 ≤5′ 27%  daily: med 17.6 p90 95.7 ≤5′ 30%  hist: med 17.0 p90 95.4 ≤5′ 36%
-night  2341 sched: med 6.3 p90 66.1 ≤5′ 45%  daily: med 6.3 p90 66.1 ≤5′ 45%  hist: med 4.8 p90 63.6 ≤5′ 53%
+night  2341 sched: med 6.3 p90 66.1 ≤5′ 45%  daily: med 6.3 p90 66.1 ≤5′ 45%  hist: med 4.8 p90 63.0 ≤5′ 52%
 sparse 3553 sched: med 8.3 p90 58.2 ≤5′ 39%  daily: med 24.6 p90 60.6 ≤5′ 17%  hist: med 7.3 p90 56.9 ≤5′ 43%
-hist better than daily by >1 min: 55%  worse: 29%
+hist better than daily by >1 min: 54%  worse: 29%
      share  hist_med  hist_p90  hist≤5  daily_med  daily≤5
 sb                                                        
-≤3    0.22      2.17     56.91    0.68       6.42     0.46
-3-6   0.25      6.84     92.78    0.43      13.38     0.33
->6    0.53     18.95     92.70    0.28      23.20     0.18
+≤3    0.22      2.03     47.87    0.69       6.42     0.46
+3-6   0.24      7.53     91.30    0.41      14.10     0.32
+>6    0.54     18.57     92.57    0.29      22.67     0.19
            n  daily   hist  daily≤5  hist≤5
 line                                       
-040    906.0  22.42  19.74     0.23    0.32
+040    906.0  22.42  19.71     0.23    0.32
 11    1240.0  32.03  34.73     0.10    0.08
 224   1119.0   4.72   4.25     0.50    0.53
 309Β  2028.0  37.08   7.73     0.18    0.41
 421    813.0  14.30  12.67     0.41    0.45
-500    910.0   8.80   4.93     0.35    0.51
+500    912.0   9.42   4.93     0.35    0.51
 550    728.0   8.85   5.10     0.26    0.49
 608    697.0  16.30  14.88     0.39    0.42
 721    933.0  10.97   7.05     0.24    0.44
-790   1426.0   4.98   4.42     0.51    0.54
+790   1426.0   4.98   4.62     0.51    0.53
 914   1479.0  19.57   6.37     0.15    0.46
 Χ95    338.0  65.12  66.29     0.01    0.02
 ## decomp.py
 OUTCOME-CONDITIONED (not causal): share of no-live queries where the next tracked pass came >20 min after both sched and hist: 26%
-{'dense': 0.35, 'medium': 0.31, 'night': 0.14, 'sparse': 0.14}
---- excluding those queries (selected on the outcome, so optimistic), n= 13175
-  all    13175 sched: med 6.2 p90 27.7 ≤5′ 44%  corr: med 3.6 p90 36.2 ≤5′ 57%  hist: med 3.7 p90 24.0 ≤5′ 58%
-  dense  2464 sched: med 8.0 p90 22.0 ≤5′ 38%  corr: med 4.2 p90 29.5 ≤5′ 54%  hist: med 4.1 p90 23.2 ≤5′ 55%
-  medium 4847 sched: med 6.7 p90 25.1 ≤5′ 42%  corr: med 3.9 p90 32.8 ≤5′ 55%  hist: med 3.5 p90 19.6 ≤5′ 59%
-  night  2256 sched: med 4.4 p90 14.7 ≤5′ 57%  corr: med 3.1 p90 8.3 ≤5′ 77%  hist: med 3.4 p90 11.5 ≤5′ 70%
-  sparse 3608 sched: med 6.0 p90 44.4 ≤5′ 45%  corr: med 5.0 p90 57.9 ≤5′ 50%  hist: med 4.8 p90 33.8 ≤5′ 51%
-hist beats sched (strictly) share: 62%  ties(<=1 min diff): 16%
+{'dense': 0.35, 'medium': 0.31, 'night': 0.15, 'sparse': 0.14}
+--- excluding those queries (selected on the outcome, so optimistic), n= 12831
+  all    12831 sched: med 5.9 p90 26.2 ≤5′ 45%  corr: med 3.8 p90 41.7 ≤5′ 57%  hist: med 3.5 p90 23.4 ≤5′ 58%
+  dense  2437 sched: med 8.1 p90 22.0 ≤5′ 37%  corr: med 4.2 p90 30.6 ≤5′ 54%  hist: med 4.0 p90 23.8 ≤5′ 55%
+  medium 4682 sched: med 6.8 p90 25.1 ≤5′ 41%  corr: med 4.1 p90 33.0 ≤5′ 55%  hist: med 3.5 p90 19.6 ≤5′ 58%
+  night  2326 sched: med 4.1 p90 11.8 ≤5′ 60%  corr: med 3.1 p90 11.0 ≤5′ 76%  hist: med 3.2 p90 10.2 ≤5′ 71%
+  sparse 3386 sched: med 5.7 p90 42.2 ≤5′ 47%  corr: med 5.1 p90 70.5 ≤5′ 49%  hist: med 4.7 p90 33.5 ≤5′ 52%
+hist beats sched (strictly) share: 62%  ties(<=1 min diff): 17%
             n  sched  hist
 band                      
 04-06  3989.0    3.5   1.9
-06-10  1354.0   10.0   8.3
-10-16  2181.0   10.8   7.7
-16-20  1371.0   11.1   8.5
-20-24  3121.0    6.1   3.6
-00-04  1159.0    4.6   3.3
+06-10  1330.0   10.0   8.2
+10-16  2082.0   10.5   7.6
+16-20  1272.0   11.1   8.8
+20-24  2904.0    5.9   3.5
+00-04  1254.0    4.9   3.2
 ## size.py
-study: distinct rows 17245  scheduled passes (one day per type) 3165  ratio 5.45
-network estimate: rows ≈ 8781241  bytes ≈ 35.1 MB + hourly headways 18,007 pairs × 3 × 24 × 2 B ≈ 2.6 MB
+single fit: rows 7312  scheduled passes 3231  rows/pass 2.26
+network: rows ≈ 3647250  at 6 B ≈ 21.9 MB  + headways ≈ 2.6 MB
