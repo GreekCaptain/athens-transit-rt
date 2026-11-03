@@ -37,9 +37,9 @@ func writeZip(t *testing.T, files map[string]string) string {
 func sampleFiles() map[string]string {
 	return map[string]string{
 		"stops.txt": "\xef\xbb\xbfstop_id,stop_code,stop_name,stop_lat,stop_lon\n" +
-			"A,A,ΠΕΙΡΑΙΑΣ,37.9400,23.6400\n" +
-			"B,B,ΜΕΣΗ,37.9500,23.6500\n" +
-			"C,C,ΣΥΝΤΑΓΜΑ,37.9600,23.6600\n",
+			"A,01,ΠΕΙΡΑΙΑΣ,37.9400,23.6400\n" +
+			"B,040054,ΜΕΣΗ,37.9500,23.6500\n" +
+			"C,01,ΣΥΝΤΑΓΜΑ,37.9600,23.6600\n",
 		"routes.txt": "route_id,route_short_name,route_long_name,route_type,route_color,route_text_color\n" +
 			"938,040,ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ,3,153CE0,FFFFFF\n" +
 			"1070,2,ΑΝΩ ΚΥΨΕΛΗ - ΚΑΙΣΑΡΙΑΝΗ,11,F19A1E,000000\n",
