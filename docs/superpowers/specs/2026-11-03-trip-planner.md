@@ -258,3 +258,7 @@ Where the code differs from the text above:
   calendar day), as contract §9 promises for every Run.
 - A rebuild for changed inputs waits 10 min, except when the STASY timetable or a new GTFS
   appears (a build at start often runs before STASY has loaded).
+- No rebuild of the same service day after its calendar midnight: the daily cache and the
+  suburban board move on to the next calendar day then, and a rebuild would drop the night's
+  runs. A daily schedule that is lost (a failed retry) is no new input either; one completed
+  (partial to full) is.
