@@ -9,6 +9,9 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
 ## Unreleased
 
 ### Live API
+- `/v2/alerts`: `stops` now lists the Stops of an OASA notice. Its «ΚΣ 040054» codes are the
+  codes on the stop signs (GTFS `stop_code`), not stop ids, so none matched before; «ΚΣ 040054»
+  is Stop `oasa:40054` ([#54](https://github.com/angelospk/athens-transit-rt/issues/54)).
 - While the GTFS is expired, a bus whose variant has no trip around now on today's weekday is
   matched against the trips of that variant on the nearest weekday that has some. OASA moved
   some variants to other weekdays since the 2026-07-08 feed (309Β runs 5863 on Tuesdays too):

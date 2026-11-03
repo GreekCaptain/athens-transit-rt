@@ -27,7 +27,7 @@ const alertFeed = `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><cha
 </channel></rss>`
 
 const alertPage = `<html><body><article><p>Με στόχο την ενημέρωση, στις 31.10.2026 και τη 1.11.2026, ως εξής:</p>
-<p>Νέα αφετηρία η στάση με ΚΣ 040054.</p></article></body></html>`
+<p>Νέα αφετηρία η στάση με ΚΣ 040054, κατάργηση της ΚΣ 10002.</p></article></body></html>`
 
 const alertPosts = `[{"id": 7, "date_gmt": "2026-10-29T17:20:07",
  "link": "https://www.athenstransport.com/2026/10/apergia/",
@@ -53,12 +53,15 @@ func TestV2Alerts(t *testing.T) {
 		t.Fatalf("before the first poll: %d %d %s", res.StatusCode, maxAge(t, res), body)
 	}
 
-	// The GTFS knows line L (a bus) and stops S0..S4.
+	// The GTFS knows line L (a bus) and stops S0..S4 (stop codes 10000..10004).
 	if id, mode, ok := a.knownLine("L"); !ok || id != "oasa:L" || mode != "bus" {
 		t.Fatalf("knownLine = %q %q %v", id, mode, ok)
 	}
-	if _, _, ok := a.knownLine("NOPE"); ok || !a.knownStop("S0") || a.knownStop("NOPE") {
-		t.Fatal("knownLine/knownStop of an unknown code")
+	if _, _, ok := a.knownLine("NOPE"); ok {
+		t.Fatal("knownLine of an unknown code")
+	}
+	if got := a.stopIDs("10002"); !reflect.DeepEqual(got, []string{"S2"}) || a.stopIDs("S0") != nil || a.stopIDs("NOPE") != nil {
+		t.Fatalf("stopIDs: %v", got)
 	}
 
 	// One poll of both sources: a notice with its page, a tender to drop, and a strike.
@@ -93,7 +96,7 @@ func TestV2Alerts(t *testing.T) {
 	from, until := "2026-10-31", "2026-11-01"
 	want := alerts.Item{ID: "oasa:101", Source: "oasa", Title: "Μερική προτροποποίηση της λεωφορειακής γραμμής 101",
 		URL: "https://www.oasa.gr/blog/notice-1/", Published: time.Date(2026, 10, 30, 4, 42, 27, 0, time.UTC).Unix(),
-		From: &from, Until: &until, Modes: []string{"bus", "trolley"}, Lines: []string{}, Stops: []string{}} // 040054 is no Stop of the test feed
+		From: &from, Until: &until, Modes: []string{"bus", "trolley"}, Lines: []string{}, Stops: []string{"oasa:S2"}} // 040054 is no stop code of the test feed
 	if !reflect.DeepEqual(got.Alerts[0], want) {
 		t.Fatalf("got  %+v\nwant %+v", got.Alerts[0], want)
 	}

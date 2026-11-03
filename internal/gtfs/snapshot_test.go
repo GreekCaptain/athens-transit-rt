@@ -22,7 +22,7 @@ func TestSnapshotRoundTrip(t *testing.T) {
 		!reflect.DeepEqual(f.Exceptions, g.Exceptions) || !reflect.DeepEqual(f.Profiles, g.Profiles) {
 		t.Fatal("snapshot changed the feed")
 	}
-	if g.TripIndex("t2") != f.TripIndex("t2") || len(g.TripsForLine("040")) != 2 {
+	if g.TripIndex("t2") != f.TripIndex("t2") || len(g.TripsForLine("040")) != 2 || len(g.StopsByCode("01")) != 2 {
 		t.Fatal("indexes not rebuilt")
 	}
 }

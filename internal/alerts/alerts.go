@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -329,8 +330,9 @@ func containsInt(vs []int, v int) bool {
 }
 
 // OASAItem is one OASA notice as an Alert; keep is false for a tender. article is the notice
-// page, nil when it could not be read (the Alert then has no dates and no stops).
-func OASAItem(fi FeedItem, article []byte, knownLine func(code string) (id, mode string, ok bool), knownStop func(code string) bool) (it Item, keep bool) {
+// page, nil when it could not be read (the Alert then has no dates and no stops). stopIDs
+// gives the GTFS stop ids of a stop code from the notice; nil means no stops are known.
+func OASAItem(fi FeedItem, article []byte, knownLine func(code string) (id, mode string, ok bool), stopIDs func(code string) []string) (it Item, keep bool) {
 	for _, c := range fi.Categories {
 		if c == "Διαγωνισμοί" {
 			return Item{}, false
@@ -344,8 +346,14 @@ func OASAItem(fi FeedItem, article []byte, knownLine func(code string) (id, mode
 			it.From, it.Until = &from, &until
 		}
 		for _, code := range StopCodes(text) {
-			if knownStop != nil && knownStop(code) {
-				it.Stops = append(it.Stops, "oasa:"+code)
+			if stopIDs == nil {
+				continue
+			}
+			for _, id := range stopIDs(code) {
+				st := "oasa:" + id
+				if !slices.Contains(it.Stops, st) {
+					it.Stops = append(it.Stops, st)
+				}
 			}
 		}
 	}
@@ -384,7 +392,7 @@ func postID(guid string) string {
 type Poller struct {
 	Get       func(ctx context.Context, url string) ([]byte, error)
 	KnownLine func(code string) (id, mode string, ok bool)
-	KnownStop func(code string) bool
+	StopIDs   func(code string) []string // GTFS stop ids of a stop code; nil: no stops
 	Now       func() time.Time
 	Log       *slog.Logger // nil: slog.Default()
 
@@ -470,7 +478,7 @@ func (p *Poller) Poll(ctx context.Context) error {
 			if !read {
 				article = nil
 			}
-			if it, keep := OASAItem(fi, article, p.KnownLine, p.KnownStop); keep {
+			if it, keep := OASAItem(fi, article, p.KnownLine, p.StopIDs); keep {
 				oasa = append(oasa, it)
 			}
 		}
