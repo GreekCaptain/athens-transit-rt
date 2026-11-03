@@ -1,0 +1,4 @@
+[{"line": "oasa:309Β", "headsign": "ΑΥΛΑΚΙ", "day_type": "weekday", "days": 9,
+  "headway_min": 15, "next_hour_headway_min": 25, "next_at": 1793742000, "spread_s": 120},
+ {"line": "oasa:040", "headsign": "ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ", "day_type": "weekday", "days": 12,
+  "headway_min": 8, "next_hour_headway_min": null, "next_at": null, "spread_s": null}]

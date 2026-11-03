@@ -10,6 +10,7 @@ import (
 	"github.com/angelospk/athens-transit-rt/internal/geo"
 	"github.com/angelospk/athens-transit-rt/internal/gtfs"
 	"github.com/angelospk/athens-transit-rt/internal/match"
+	"github.com/angelospk/athens-transit-rt/internal/model"
 	"github.com/angelospk/athens-transit-rt/internal/segspeed"
 	"github.com/angelospk/athens-transit-rt/internal/telematics"
 )
@@ -62,6 +63,7 @@ type StopResponse struct {
 	Stop      StopInfo      `json:"stop"`
 	Lines     []string      `json:"lines"`
 	Arrivals  []StopArrival `json:"arrivals"`
+	Usual     []model.Usual `json:"usual"` // rev 18
 	UpdatedAt int64         `json:"updated_at"`
 }
 
@@ -186,7 +188,7 @@ func (a *App) handleStop(w http.ResponseWriter, r *http.Request) {
 	}
 	st := f.Stops[s]
 	writeJSON(w, http.StatusOK, stopMaxAge, StopResponse{Stop: StopInfo{st.ID, st.Name, st.Lat, st.Lon},
-		Lines: lines, Arrivals: arr, UpdatedAt: now.Unix()})
+		Lines: lines, Arrivals: arr, Usual: a.usualV1(wd, s, lines, now), UpdatedAt: now.Unix()})
 }
 
 // boardVehicle is one vehicle of a line's last poll, with its place.

@@ -3,9 +3,12 @@ package server
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/angelospk/athens-transit-rt/internal/gtfs"
 	"github.com/angelospk/athens-transit-rt/internal/model"
+	"github.com/angelospk/athens-transit-rt/internal/telematics"
 	"github.com/angelospk/athens-transit-rt/internal/usual"
 )
 
@@ -90,32 +93,69 @@ type usualRower interface {
 	Usual(stopID string, now time.Time, arrivals []model.Arrival) []model.Usual
 }
 
-// Usual is the usual service at an OASA stop. A next time stays only when an Arrival of the
-// same line and headsign (timetable or live) is within usualGuardS of it: the past weeks do
-// not know that today has no such run.
+// Usual is the usual service at an OASA stop, guarded by the stop's Arrivals.
 func (o *oasaAdapter) Usual(stopID string, now time.Time, arrivals []model.Arrival) []model.Usual {
-	st := o.a.usual.Load()
-	_, i, err := o.stop(stopID)
-	if st == nil || err != nil {
+	w, i, err := o.stop(stopID)
+	if err != nil {
 		return nil
 	}
-	w := o.a.world()
-	native := w.feed.Stops[i].ID
-	near := map[[2]string][]int64{}
-	for _, ar := range arrivals {
-		k := [2]string{ar.Line, ar.Headsign}
-		near[k] = append(near[k], ar.At)
+	out := o.a.usualAt(w, i, now, func() map[[2]string][]int64 {
+		near := map[[2]string][]int64{}
+		for _, ar := range arrivals {
+			k := [2]string{strings.TrimPrefix(ar.Line, oasaPrefix), ar.Headsign}
+			near[k] = append(near[k], ar.At)
+		}
+		return near
+	})
+	for k := range out {
+		out[k].Line = oasaPrefix + out[k].Line
 	}
-	var out []model.Usual
-	for _, r := range st.Query(native, now) {
-		u := model.Usual{Line: oasaPrefix + r.Line, Headsign: r.Headsign, DayType: r.DayType, Days: r.Days,
+	return out
+}
+
+// usualAt is the usual service at stop i, lines without the namespace (as /v1). A next time
+// stays only when guard (asked only then) has a time of the same line and headsign within
+// usualGuardS of it: the past weeks do not know that today has no such run. nil without a
+// store.
+func (a *App) usualAt(w *world, i int32, now time.Time, guard func() map[[2]string][]int64) []model.Usual {
+	st := a.usual.Load()
+	if st == nil {
+		return nil
+	}
+	var near map[[2]string][]int64
+	out := []model.Usual{}
+	for _, r := range st.Query(w.feed.Stops[i].ID, now) {
+		u := model.Usual{Line: r.Line, Headsign: r.Headsign, DayType: r.DayType, Days: r.Days,
 			HeadwayMin: r.HeadwayMin, NextHourHeadwayMin: r.NextHourHeadwayMin, NextAt: r.NextAt, SpreadS: r.SpreadS}
-		if u.NextAt != nil && !guarded(near[[2]string{u.Line, u.Headsign}], *u.NextAt) {
-			u.NextAt, u.SpreadS = nil, nil
+		if u.NextAt != nil {
+			if near == nil {
+				near = guard()
+			}
+			if !guarded(near[[2]string{u.Line, u.Headsign}], *u.NextAt) {
+				u.NextAt, u.SpreadS = nil, nil
+			}
 		}
 		if u.NextAt != nil || u.HeadwayMin != nil {
 			out = append(out, u)
 		}
+	}
+	return out
+}
+
+// usualV1 is usualAt for /v1/stops/{id}, guarded by the stop's rows with today's daily
+// schedules (cached only: no OASA call), as /v2 builds its Arrivals.
+func (a *App) usualV1(w *world, i int32, lines []string, now time.Time) []model.Usual {
+	out := a.usualAt(w, i, now, func() map[[2]string][]int64 {
+		near := map[[2]string][]int64{}
+		for _, row := range a.stopRows(w, i, lines, now, v2Horizon,
+			func(l string) (telematics.DailySchedule, bool) { return a.dailyCached(l, gtfs.Midnight(now)) }) {
+			k := [2]string{row.Line, row.Headsign}
+			near[k] = append(near[k], row.At)
+		}
+		return near
+	})
+	if out == nil {
+		return []model.Usual{}
 	}
 	return out
 }

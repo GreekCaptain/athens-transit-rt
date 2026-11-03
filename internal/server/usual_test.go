@@ -2,6 +2,7 @@ package server
 
 import (
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -150,5 +151,36 @@ func TestBuildUsual(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(a.cfg.StateDir, "usual", "20261002.pass")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The web's stop card reads /v1/stops/{id}: it gets the same `usual`, lines without the
+// namespace (as its arrivals).
+func TestV1StopUsual(t *testing.T) {
+	a := newApp(t, monday1020)
+	usualDays(t, a, "10:00", "10:10", "10:30", "10:40", "10:50", "11:00")
+	var s struct {
+		Usual []model.Usual `json:"usual"`
+	}
+	res, body := get(t, a, "/v1/stops/S3")
+	if res.StatusCode != 200 {
+		t.Fatalf("status %d", res.StatusCode)
+	}
+	if err := json.Unmarshal(body, &s); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Usual) != 1 || s.Usual[0].Line != "L" || s.Usual[0].NextAt == nil || *s.Usual[0].NextAt != local(10, 30) ||
+		s.Usual[0].HeadwayMin == nil || *s.Usual[0].HeadwayMin != 10 {
+		t.Fatalf("usual %s", body)
+	}
+	a3 := newApp(t, monday1020)
+	usualDays(t, a3, "12:30") // no run of today near it
+	if _, body = get(t, a3, "/v1/stops/S3"); strings.Contains(string(body), `"next_at":1`) {
+		t.Fatalf("guard: %s", body)
+	}
+	a2 := newApp(t, monday1020)
+	_, body = get(t, a2, "/v1/stops/S3")
+	if !strings.Contains(string(body), `"usual":[]`) {
+		t.Fatalf("no store: %s", body)
 	}
 }

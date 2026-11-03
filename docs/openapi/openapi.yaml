@@ -2430,6 +2430,13 @@ components:
               scheduled: {type: [integer, "null"], description: "The trip's timetable time at the stop, Unix seconds; null for an unmatched bus."}
               stops_away: {type: [integer, "null"], minimum: 1, description: "1 when the stop is the bus's next one; null for `schedule`."}
               distance_m: {type: [integer, "null"], minimum: 0, description: "Along the route; null for `schedule`."}
+        usual:
+          type: array
+          description: |
+            Contract rev 18: the usual service of each line and headsign here, as `/v2/stops/{id}`
+            `usual` but with `line` as in `arrivals`. `[]` while the server has no history.
+          items:
+            $ref: "#/components/schemas/Usual"
         updated_at: {type: integer}
 
     StopPredictions:

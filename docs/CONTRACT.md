@@ -14,8 +14,8 @@ Source of truth: `athens-transit-rt/docs/CONTRACT.md`. The frontend keeps a copy
   frontend repo by whoever made it (backend thread opens the copy as a commit or
   issue on the frontend repo).
 
-Revision: 18 (2026-11-04): `/v2/stops/{id}` gets `usual`, the usual service of each OASA line
-and headsign at the stop, learnt from the past weeks
+Revision: 18 (2026-11-04): `/v2/stops/{id}` and `/v1/stops/{stop_id}` get `usual`, the usual
+service of each OASA line and headsign at the stop, learnt from the past weeks
 (rev 16 and 17 are taken by open PRs (#64 `/v2/plan`, #73 `start_delay`); whichever merges
 last renumbers;
 rev 15: OASA Patterns and bus Vehicles get both directions, 0 and 1 (the
@@ -302,6 +302,10 @@ the others keep their usual rate. `stop_id` is the GTFS `stop_id`, as in
   OASA's any more. A client that shows only buses filters on `source`.
 - Up to 60 min ahead, sorted by `at`, at most 3 rows per `line` and `variant`. `arrivals` may
   be `[]`.
+- `usual` (rev 18): the usual service of each line and headsign at the stop, as
+  [`/v2` Usual](#usual-rev-18-v2stopsid) but with `line` as in `arrivals` (`"608"`). The guard
+  of `next_at` uses today's timetable (OASA's daily schedule while the GTFS is expired) even
+  when `arrivals` has no `schedule` rows. `[]` while the server has no history.
 - Headers: `Cache-Control: public, max-age=15`. Refetch every 15-30 s while shown.
 - `404` `{"error":"unknown_stop"}` (`max-age=60`) for an id not in the current GTFS. `503`
   `{"error":"warming_up"}` before the static GTFS is loaded.
@@ -610,6 +614,8 @@ and compare them; they never parse them.
 - `status`: `scheduled` | `running` | `delayed`. Cancelled Runs are left out, as today.
 
 #### Usual (rev 18, `/v2/stops/{id}`)
+
+(`/v1/stops/{stop_id}` has the same rows, `line` without `oasa:`.)
 
 The usual service of an OASA Line and headsign at the Stop, learnt from the bus passes of the
 past weeks ([athens-transit-map#24](https://github.com/angelospk/athens-transit-map/issues/24),
