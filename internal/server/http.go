@@ -80,9 +80,10 @@ func (a *App) Handler() http.Handler {
 		}
 		if r.URL.Path == "/v1/vehicles" || strings.HasPrefix(r.URL.Path, "/v1/vehicles/tiles/") ||
 			r.URL.Path == "/v2/vehicles" || strings.HasPrefix(r.URL.Path, "/v2/vehicles/tiles/") ||
-			r.URL.Path == "/v2/stops" ||
+			r.URL.Path == "/v2/stops" || r.URL.Path == "/v2/municipal" ||
 			!acceptsGzip(r.Header.Get("Accept-Encoding")) {
-			// /v1/vehicles, /v2/vehicles, their tiles and /v2/stops serve bytes compressed once.
+			// /v1/vehicles, /v2/vehicles, their tiles, /v2/stops and /v2/municipal serve bytes
+			// compressed once.
 			mux.ServeHTTP(w, r)
 			return
 		}

@@ -14,9 +14,11 @@ Source of truth: `athens-transit-rt/docs/CONTRACT.md`. The frontend keeps a copy
   frontend repo by whoever made it (backend thread opens the copy as a commit or
   issue on the frontend repo).
 
-Revision: 15 (2026-11-03): OASA Patterns and bus Vehicles get both directions, 0 and 1 (the
+Revision: 17 (2026-11-04): `GET /v2/municipal`, the municipal bus routes and stops of OpenStreetMap
+(rev 16 is taken by two open changes, `/v2/plan` and the daily `start_delay`;
+rev 15: OASA Patterns and bus Vehicles get both directions, 0 and 1 (the
 GTFS has no `direction_id`, so all were 0); metro M2 `headsign` is where the train goes, not
-where it starts
+where it starts)
 (rev 14: on an expired GTFS, `delay_s` (and a stop board's `scheduled`) of a
 bus seen leaving on a clear run of OASA's daily schedule is against that run; rev 13: `GET /v2/alerts`, service disruptions (OASA notices and strikes); rev 12: `direction` on `/v2` Vehicles; STASY Pattern directions follow branches (M3 airport);
 rev 11: `/v2/stops/{id}` bus Arrivals include OASA's own predictions; rev 10: live responses send `Access-Control-Expose-Headers: Date`; rev 9: `at_terminus` on `/v1/lines/{line_id}` vehicles and `/v2` Vehicles; rev 8: `GET /v1/stops/{stop_id}` (a stop board); the unified `/v2` API
@@ -649,6 +651,7 @@ All: UTF-8 JSON, `Access-Control-Allow-Origin: *`, gzip, times in Unix seconds, 
 | `GET /v2/vehicles/suburban` | as `/v2/vehicles`, suburban trains (~10, one body) | until `next_update_at`, 5-30 | `proastiakos`: opens the stream |
 | `GET /v2/runs/{id}` | `{run: Run, sources}` | 15 | none |
 | `GET /v2/alerts` (rev 13) | `{alerts: [Alert], updated_at}` | 300 | none (polled in the background) |
+| `GET /v2/municipal` (rev 17) | `{routes: [MunicipalRoute], stops: {id: MunicipalStop}, updated_at, attribution}` | 86400 | none (OpenStreetMap, polled weekly) |
 
 Shapes not shown above:
 
@@ -677,8 +680,37 @@ Shapes not shown above:
  "modes": ["bus"], "lines": ["oasa:112"], "stops": ["oasa:40054"], "urgent": false}
 ```
 
+```json
+// MunicipalRoute (rev 17): one route relation of OpenStreetMap, one direction or a loop
+{"id": "osm:r20462642", "ref": "Β1", "name": "Δημοτικό Λεωφορείο Β1: Πολύδροσο → Κοιμητήριο",
+ "municipality": "Δήμος Χαλανδρίου",
+ "timetable_url": "https://www.chalandri.gr/yphresies/ypodomes-erga/dimotiki-sygkoinonia/",
+ "shape": [[[38.02, 23.80], [38.03, 23.81]]], "stops": ["osm:n201", "osm:n203"]}
+// MunicipalStop
+{"name": "Πολύδροσο", "lat": 38.02, "lon": 23.80}
+```
+
 Rules:
 
+- `/v2/municipal` (rev 17): the bus routes that municipalities run (δημοτική συγκοινωνία), from
+  OpenStreetMap through the Overpass API: at start, then every 7 days (every hour after a
+  failure). No OASA request. About 37 routes of 12 municipalities, ~50 KB gzip. **No timetable,
+  no live data**: clients show the route, its stops and a link to `timetable_url`.
+  - A route is an OSM bus or minibus route relation in Attica whose `operator` starts with
+    «Δήμος» or whose `network` says «Δημοτική». `shape`: its ways as lines of `[lat, lon]`
+    (5 decimals); a way that continues the last line is joined to it, so a route has one line or
+    a few. A route with no way is left out.
+  - `ref`: the line's short name, `null` when OSM has none. `municipality`: the operator with
+    its spaces normalised («Δήμος Παπάγου-Χολαργού»). `timetable_url`: that municipality's page
+    (timetable, PDF or notices), `null` for a municipality the backend does not know.
+  - `stops`: Stop ids (`osm:n<node id>`) in route order, the members with a `stop` role, or the
+    platforms when the route has none; `[]` when OSM has neither (10 routes today). `stops`
+    (the map) holds every listed Stop; `name` is `null` when OSM has none.
+  - Order: by `municipality`, then `ref`, then `name`. A failed poll keeps the last data.
+    Before the first good poll: `routes: []`, `stops: {}`, `updated_at: null`, `max-age=5`,
+    no `ETag`; clients then show nothing. After it: `max-age=86400` with an `ETag`.
+  - Licence: ODbL. Clients show `attribution` («© OpenStreetMap contributors (ODbL)») wherever
+    they show the layer.
 - `/v2/alerts` (rev 13): service disruptions from two sources, polled every 10 min.
   - `source: "oasa"`: the OASA news feed (`oasa.gr/feed`), every item except tenders
     (category «Διαγωνισμοί»). Buses and trolleys only. `lines`: the line codes that follow

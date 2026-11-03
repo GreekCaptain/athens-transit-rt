@@ -174,6 +174,7 @@ Full field rules: [`CONTRACT.md`](CONTRACT.md#unified-api-v2-rev-8); terms:
 | `GET /v2/vehicles/suburban` | suburban trains (opens the railway.gov.gr stream) | 5 s with trains, else 15 s |
 | `GET /v2/runs/{id}` | one Run (a trip of one day) with every stop and its time | 15 s |
 | `GET /v2/alerts` | service disruptions (rev 13): OASA notices and strikes | 5 min |
+| `GET /v2/municipal` | municipal bus routes and stops from OpenStreetMap (rev 17), no times | 1 day |
 
 - **Ids** are `<source>:<native>` and must be percent-encoded in a URL: `oasa:040`,
   `stasy:M2`, `stasy:συνταγμα-metro`, `proastiakos:KIATO`,
@@ -223,6 +224,22 @@ empty list before the first). Show an Alert from `from` to `until`, and 3 days a
 # Every Alert now, newest first
 curl -s https://transit.haroldpoi.dev/v2/alerts \
   | jq -r '.alerts[] | [.source, .from, .until, (.modes|join(",")), .title] | @tsv'
+```
+
+### Municipal buses (`/v2/municipal`)
+
+`GET /v2/municipal` lists the bus routes that municipalities run (δημοτική συγκοινωνία), which
+OASA does not have: about 37 routes of 12 municipalities, from OpenStreetMap (ODbL), refreshed
+weekly from the Overpass API. Each route has its `shape` (lines of `[lat, lon]`), its `stops`
+(`osm:n<id>`, `[]` when OSM has none), its `municipality` and `timetable_url`, the
+municipality's own page. There are no times and no live positions. Show `attribution`
+(«© OpenStreetMap contributors (ODbL)») with the layer. Before the first poll after a start the
+lists are empty and `updated_at` is `null`.
+
+```bash
+# Every municipal route, with its timetable page
+curl -s --compressed https://transit.haroldpoi.dev/v2/municipal \
+  | jq -r '.routes[] | [.municipality, .ref, .name, (.stops|length), .timetable_url] | @tsv'
 ```
 
 ## OASA's predictions at a stop
