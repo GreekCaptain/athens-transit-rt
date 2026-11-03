@@ -8,6 +8,13 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
 
 ## Unreleased
 
+### Statistics
+- Daily stats files get `start_delay` (contract rev 17): per line, how late the runs of OASA's
+  daily schedule left their first stop (runs measured, mean, p90, and a minute histogram so
+  several days add up). Measured for buses seen leaving on a clear run (#55); days without it
+  are unchanged. The fix history gets two trailing columns for it, `run_start` and
+  `start_delay_s` ([#72](https://github.com/angelospk/athens-transit-rt/issues/72)).
+
 ### Live API
 - `GET /v2/plan` (contract rev 16): a trip planner for the app's evening section. From a point
   to a point, the first `n` options after `after`, or with `last=true` the last `n` of the

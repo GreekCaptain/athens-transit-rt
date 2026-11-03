@@ -28,7 +28,7 @@ func typicalTable(t *testing.T, at time.Time, feed string) *segspeed.Table {
 	b.WriteString(history.Header)
 	for _, v := range []string{"h1", "h2"} {
 		for i := 0; i <= 50; i++ {
-			fmt.Fprintf(&b, "%d,L,SH,%s,37980000,23720000,%s,T,SH,%d,0\n", start.Unix()+int64(i*20), v, feed, i*100)
+			fmt.Fprintf(&b, "%d,L,SH,%s,37980000,23720000,%s,T,SH,%d,0,,\n", start.Unix()+int64(i*20), v, feed, i*100)
 		}
 	}
 	f, err := os.Create(filepath.Join(dir, start.UTC().Format("2006-01-02T15")+".csv.gz"))

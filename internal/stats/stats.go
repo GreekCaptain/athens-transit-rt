@@ -72,6 +72,8 @@ type Day struct {
 	Hours       []Hour `json:"hours"`           // 24, index = local hour
 	ByLine      []Line `json:"by_line"`         // lines with a fix, by id
 	Trips       *Trips `json:"trips,omitempty"` // scheduled trips that ran; absent without a plan of the feed the rows used
+	// StartDelay: how late the runs of OASA's daily schedule left; absent when no run was measured.
+	StartDelay *StartDelays `json:"start_delay,omitempty"`
 }
 
 type Index struct {
@@ -139,12 +141,13 @@ func Compute(date string, loc *time.Location, files []string, now time.Time, pla
 	}
 	var recs []rec
 	var trips *tripCounter
+	delays := newDelayCounter(start.Unix(), end.Unix())
 	if plan != nil {
 		trips = newTripCounter(plan)
 	}
 	strs := map[string]string{}
 	for _, f := range files {
-		if recs, err = readFile(f, start.Unix(), end.Unix(), recs, strs, trips); err != nil {
+		if recs, err = readFile(f, start.Unix(), end.Unix(), recs, strs, trips, delays); err != nil {
 			return nil, fmt.Errorf("%s: %w", filepath.Base(f), err)
 		}
 	}
@@ -171,6 +174,7 @@ func Compute(date string, loc *time.Location, files []string, now time.Time, pla
 	if trips != nil {
 		day.Trips = trips.result()
 	}
+	day.StartDelay = delays.result()
 	vehs := map[string]bool{}
 	var prev *rec
 	for i := range recs {
@@ -235,9 +239,10 @@ func sample(a, b *rec) (dist, secs float64, ok bool) {
 	return dist, secs, true
 }
 
-// readFile appends the rows of one gzipped history file whose fix time is in [from, to), and
-// gives every matched row to trips (when not nil). Strings repeat a lot: strs interns them.
-func readFile(path string, from, to int64, recs []rec, strs map[string]string, trips *tripCounter) ([]rec, error) {
+// readFile appends the rows of one gzipped history file whose fix time is in [from, to), gives
+// every matched row to trips (when not nil) and every row with a start delay to delays. Strings
+// repeat a lot: strs interns them.
+func readFile(path string, from, to int64, recs []rec, strs map[string]string, trips *tripCounter, delays *delayCounter) ([]rec, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return recs, err
@@ -275,6 +280,7 @@ func readFile(path string, from, to int64, recs []rec, strs map[string]string, t
 		return s
 	}
 	tripCol, gtfsCol, smCol := optCol(col, "trip_id"), optCol(col, "gtfs"), optCol(col, "s_m")
+	runCol, startCol := optCol(col, "run_start"), optCol(col, "start_delay_s")
 	for {
 		row, err := cr.Read()
 		if err == io.EOF {
@@ -302,6 +308,13 @@ func readFile(path string, from, to int64, recs []rec, strs map[string]string, t
 				}
 			}
 			trips.add(t, row[tripCol], g, float64(sm))
+		}
+		if runCol >= 0 && startCol >= 0 && row[runCol] != "" {
+			run, err1 := strconv.ParseInt(row[runCol], 10, 64)
+			sd, err2 := strconv.Atoi(row[startCol])
+			if err1 == nil && err2 == nil {
+				delays.add(intern(row[col["line"]]), intern(row[col["veh"]]), run, sd)
+			}
 		}
 		if t < from || t >= to {
 			continue

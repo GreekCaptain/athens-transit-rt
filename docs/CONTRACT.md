@@ -14,9 +14,12 @@ Source of truth: `athens-transit-rt/docs/CONTRACT.md`. The frontend keeps a copy
   frontend repo by whoever made it (backend thread opens the copy as a commit or
   issue on the frontend repo).
 
-Revision: 16 (2026-11-03, PR #64, live once deployed): `GET /v2/plan`, trips from a point to a
-point with walks and transfers ([§9](#9-trip-planner-v2plan-rev-16))
-(rev 15: OASA Patterns and bus Vehicles get both directions, 0 and 1 (the
+Revision: 17 (2026-11-04): the daily statistics files (`/v1/stats/days/{date}`, the `stats`
+branch) get `start_delay`, how late each line's runs of OASA's daily schedule left their first
+stop ([API.md](API.md#start-delays-start_delay)); days without it are as before
+(rev 16: `GET /v2/plan`, trips from a point to a point with walks and transfers
+([§9](#9-trip-planner-v2plan-rev-16));
+rev 15: OASA Patterns and bus Vehicles get both directions, 0 and 1 (the
 GTFS has no `direction_id`, so all were 0); metro M2 `headsign` is where the train goes, not
 where it starts; rev 14: on an expired GTFS, `delay_s` (and a stop board's `scheduled`) of a
 bus seen leaving on a clear run of OASA's daily schedule is against that run; rev 13: `GET /v2/alerts`, service disruptions (OASA notices and strikes); rev 12: `direction` on `/v2` Vehicles; STASY Pattern directions follow branches (M3 airport);
