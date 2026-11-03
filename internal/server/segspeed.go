@@ -28,7 +28,9 @@ func (a *App) typicalSpeeds(ctx context.Context) {
 		now := a.now()
 		if feed := a.gtfsVersion(); feed != "" && (a.segs.Load().Feed() != feed || now.Sub(built) >= typicalEvery) {
 			start := time.Now()
+			a.histBuild.Lock()
 			tab, err := segspeed.Build(filepath.Join(a.cfg.StateDir, "history"), gtfs.Athens, now.Add(-typicalDays*24*time.Hour), now, feed)
+			a.histBuild.Unlock()
 			if err != nil {
 				a.log.Warn("typical speeds", "err", err)
 			} else {

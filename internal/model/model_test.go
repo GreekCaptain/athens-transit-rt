@@ -20,6 +20,7 @@ func TestFixturesRoundTrip(t *testing.T) {
 		"stop-index-entry.json": func() any { return &IndexEntry{} },
 		"run.json":              func() any { return &Run{} },
 		"sources.json":          func() any { return &[]SourceState{} },
+		"usual.json":            func() any { return &[]Usual{} },
 	}
 	for name, mk := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -14,8 +14,10 @@ Source of truth: `athens-transit-rt/docs/CONTRACT.md`. The frontend keeps a copy
   frontend repo by whoever made it (backend thread opens the copy as a commit or
   issue on the frontend repo).
 
-Revision: 18 (2026-11-04): `GET /v2/municipal`, the municipal bus routes and stops of OpenStreetMap
-(rev 17: the daily statistics files (`/v1/stats/days/{date}`, the `stats`
+Revision: 19 (2026-11-04): `/v2/stops/{id}` and `/v1/stops/{stop_id}` get `usual`, the usual
+service of each OASA line and headsign at the stop, learnt from the past weeks
+(rev 18: `GET /v2/municipal`, the municipal bus routes and stops of OpenStreetMap;
+rev 17: the daily statistics files (`/v1/stats/days/{date}`, the `stats`
 branch) get `start_delay`, how late each line's runs of OASA's daily schedule left their first
 stop ([API.md](API.md#start-delays-start_delay)); days without it are as before;
 rev 16: `GET /v2/plan`, trips from a point to a point with walks and transfers
@@ -303,6 +305,10 @@ the others keep their usual rate. `stop_id` is the GTFS `stop_id`, as in
   OASA's any more. A client that shows only buses filters on `source`.
 - Up to 60 min ahead, sorted by `at`, at most 3 rows per `line` and `variant`. `arrivals` may
   be `[]`.
+- `usual` (rev 19): the usual service of each line and headsign at the stop, as
+  [`/v2` Usual](#usual-rev-19-v2stopsid) but with `line` as in `arrivals` (`"608"`). The guard
+  of `next_at` uses today's timetable (OASA's daily schedule while the GTFS is expired) even
+  when `arrivals` has no `schedule` rows. `[]` while the server has no history.
 - Headers: `Cache-Control: public, max-age=15`. Refetch every 15-30 s while shown.
 - `404` `{"error":"unknown_stop"}` (`max-age=60`) for an id not in the current GTFS. `503`
   `{"error":"warming_up"}` before the static GTFS is loaded.
@@ -610,6 +616,39 @@ and compare them; they never parse them.
 - `platform`: `null` unless the Source gives one (only railway.gov.gr today).
 - `status`: `scheduled` | `running` | `delayed`. Cancelled Runs are left out, as today.
 
+#### Usual (rev 19, `/v2/stops/{id}`)
+
+(`/v1/stops/{stop_id}` has the same rows, `line` without `oasa:`.)
+
+The usual service of an OASA Line and headsign at the Stop, learnt from the bus passes of the
+past weeks ([athens-transit-map#24](https://github.com/angelospk/athens-transit-map/issues/24),
+study: `docs/superpowers/specs/2026-11-03-usual-headway.md`). It is for a line with no `live`
+Arrival: it says how often a bus usually comes, never that one is coming.
+
+```json
+"usual": [
+  {"line": "oasa:309Β", "headsign": "ΑΥΛΑΚΙ", "day_type": "weekday", "days": 9,
+   "headway_min": 15, "next_hour_headway_min": 25,
+   "next_at": 1793742000, "spread_s": 120}
+]
+```
+
+- One row per Line and headsign that has a `headway_min` or a `next_at`, by line then headsign;
+  also for a line with a `live` Arrival. `[]` for metro, tram and suburban Stops, and while the
+  server has no history yet. A row may name a headsign no Arrival has (a run that is not on
+  the board now).
+- Learnt from the days of the same `day_type` (`weekday` | `saturday` | `sunday`; Greek public
+  holidays count as `sunday`) of the last 28 days, at the same local time of day. Service days
+  run 04:00-04:00. Minutes when the server saw no bus at all (an outage) are left out.
+- `headway_min`: median gap between buses in this local hour (whole minutes, ≥ 1), from at
+  least 6 gaps; `next_hour_headway_min`: the same for the next hour. `null` when unknown.
+- `next_at`: the usual time of the next pass, now + the median wait of the past days. Set only
+  when at least 3 days had a bus within 3 h, more than half of the days that could be read did,
+  their waits differ by at most 3 min (`spread_s`, the IQR, seconds), and an Arrival of the same
+  line and headsign (today's timetable, or a bus) is within 15 min of it. Else `null`, and
+  `spread_s` too. It is an estimate: show it as one, and not when the line has a `live` Arrival.
+- `days`: the past days with a bus within 3 h of now.
+
 #### Source state (in every list response)
 
 ```json
@@ -647,7 +686,7 @@ All: UTF-8 JSON, `Access-Control-Allow-Origin: *`, gzip, times in Unix seconds, 
 | `GET /v2/lines/{id}` | `{line: Line, patterns: [Pattern], stops: {id: Stop}, sources}` | 3600 | none |
 | `GET /v2/lines/{id}/vehicles` | `{line, updated_at, next_update_at, vehicles: [Vehicle], sources}` | until `next_update_at`, 5-300 | `oasa`: marks the line watched (as `/v1/lines/{id}`); `proastiakos`: opens the stream |
 | `GET /v2/stops` | `{stops: [StopIndexEntry], sources}` every Stop of every mode | 3600 | none |
-| `GET /v2/stops/{id}` | `{stop: Stop, lines: [Line], arrivals: [Arrival], updated_at, sources}` | 15 | `oasa`: raises its lines' priority; `proastiakos`: opens the stream |
+| `GET /v2/stops/{id}` | `{stop: Stop, lines: [Line], arrivals: [Arrival], usual: [Usual] (rev 19), updated_at, sources}` | 15 | `oasa`: raises its lines' priority; `proastiakos`: opens the stream |
 | `GET /v2/vehicles` | `{updated_at, next_update_at, vehicles: [Vehicle], sources}` bus + trolley | until `next_update_at`, 5-30 | none |
 | `GET /v2/vehicles/tiles/{z}/{x}/{y}` | as `/v2/vehicles`, tile-cut as rev 5 | as above | none |
 | `GET /v2/vehicles/rail` | as `/v2/vehicles`, metro + tram (~60 vehicles, one body) | until `next_update_at`, 5-30 | none |

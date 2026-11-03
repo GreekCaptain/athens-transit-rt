@@ -290,7 +290,7 @@ func (a *App) handleV2Stop(w http.ResponseWriter, r *http.Request) {
 		notFound(w, "unknown_stop")
 		return
 	}
-	lines, arr := []model.Line{}, []model.Arrival{}
+	lines, arr, us := []model.Line{}, []model.Arrival{}, []model.Usual{}
 	if err == nil {
 		for _, l := range st.Lines {
 			if li, err := ad.LineInfo(l); err == nil {
@@ -300,13 +300,18 @@ func (a *App) handleV2Stop(w http.ResponseWriter, r *http.Request) {
 		if got, err := ad.Arrivals(r.Context(), id, now); err == nil && got != nil {
 			arr = got
 		}
+		if u, ok := ad.(usualRower); ok {
+			if got := u.Usual(id, now, arr); got != nil {
+				us = got
+			}
+		}
 	}
 	ids := []string(nil)
 	if st != nil {
 		ids = st.Lines
 	}
 	src := a.statesOf(now, ad, ids)
-	writeV2(w, r, stopMaxAge, src, map[string]any{"stop": st, "lines": lines, "arrivals": arr,
+	writeV2(w, r, stopMaxAge, src, map[string]any{"stop": st, "lines": lines, "arrivals": arr, "usual": us,
 		"updated_at": now.Unix(), "sources": src})
 }
 

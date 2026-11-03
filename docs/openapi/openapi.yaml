@@ -1356,6 +1356,7 @@ paths:
                 arrivals:
                   - {line: "stasy:M2", stop: "stasy:συνταγμα-metro", headsign: Ελληνικό, at: 1793205900, scheduled_at: 1793205900, delay_s: null, source: timetable, run: "stasy:run:1012345:2026-10-29", vehicle: null, vehicle_label: null, platform: null, status: scheduled}
                   - {line: "stasy:M3", stop: "stasy:συνταγμα-metro", headsign: Αεροδρόμιο, at: 1793206080, scheduled_at: 1793206080, delay_s: null, source: timetable, run: "stasy:run:1012401:2026-10-29", vehicle: null, vehicle_label: null, platform: null, status: scheduled}
+                usual: []
                 updated_at: 1793205880
                 sources:
                   - {id: stasy, state: ok, updated_at: 1793205880}
@@ -2614,6 +2615,13 @@ components:
               scheduled: {type: [integer, "null"], description: "The trip's timetable time at the stop, Unix seconds; null for an unmatched bus."}
               stops_away: {type: [integer, "null"], minimum: 1, description: "1 when the stop is the bus's next one; null for `schedule`."}
               distance_m: {type: [integer, "null"], minimum: 0, description: "Along the route; null for `schedule`."}
+        usual:
+          type: array
+          description: |
+            Contract rev 19: the usual service of each line and headsign here, as `/v2/stops/{id}`
+            `usual` but with `line` as in `arrivals`. `[]` while the server has no history.
+          items:
+            $ref: "#/components/schemas/Usual"
         updated_at: {type: integer}
 
     StopPredictions:
@@ -3007,6 +3015,38 @@ components:
           type: string
           enum: [oasa, stasy, proastiakos]
 
+    Usual:
+      type: object
+      description: |
+        The usual service of an OASA Line and headsign at a Stop (contract rev 19), from the bus
+        passes of the days of the same day type in the last 28 days, at the same local time of
+        day. Listed only with a `headway_min` or a `next_at`.
+      required: [line, headsign, day_type, days, headway_min, next_hour_headway_min, next_at, spread_s]
+      properties:
+        line: {type: string, example: "oasa:309Β"}
+        headsign: {type: string, example: ΑΥΛΑΚΙ}
+        day_type:
+          type: string
+          enum: [weekday, saturday, sunday]
+          description: Today's day type; Greek public holidays are `sunday`.
+        days:
+          type: integer
+          description: Past days with a bus within 3 h of now.
+        headway_min:
+          type: [integer, "null"]
+          description: Median gap between buses in this local hour, minutes (≥ 1), from at least 6 gaps.
+        next_hour_headway_min:
+          type: [integer, "null"]
+          description: The same for the next local hour.
+        next_at:
+          type: [integer, "null"]
+          description: |
+            Usual time of the next pass (Unix seconds), only when at least 3 days had one within
+            3 h, more than half of the readable days did, their waits differ by at most 3 min,
+            and an Arrival of the same line and headsign is within 15 min of it. An estimate.
+        spread_s:
+          type: [integer, "null"]
+          description: IQR of the past days' waits, seconds; `null` with `next_at`.
     Arrival:
       type: object
       description: A vehicle or a timetable trip on its way to a Stop.
@@ -3192,7 +3232,7 @@ components:
 
     StopDetailResponse:
       type: object
-      required: [stop, lines, arrivals, updated_at, sources]
+      required: [stop, lines, arrivals, usual, updated_at, sources]
       properties:
         stop:
           description: "`null` while its Source has not loaded yet (never `404` then)."
@@ -3209,6 +3249,13 @@ components:
           description: Soonest first; at most 2 h ahead, 4 per Line and headsign, 30 in all.
           items:
             $ref: "#/components/schemas/Arrival"
+        usual:
+          type: array
+          description: |
+            The usual service of each OASA Line and headsign at the Stop, learnt from the past
+            weeks (contract rev 19). `[]` for other Sources and while the server has no history.
+          items:
+            $ref: "#/components/schemas/Usual"
         updated_at:
           type: integer
           description: Build time of the answer.
