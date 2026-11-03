@@ -119,6 +119,7 @@ func (a *App) routeV2(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v2/vehicles/suburban", a.handleV2SuburbanVehicles)
 	mux.HandleFunc("GET /v2/runs/{id}", a.handleV2Run)
 	mux.HandleFunc("GET /v2/alerts", a.handleV2Alerts)
+	mux.HandleFunc("GET /v2/plan", a.handleV2Plan)
 	mux.HandleFunc("GET /v2/municipal", a.handleV2Municipal)
 }
 

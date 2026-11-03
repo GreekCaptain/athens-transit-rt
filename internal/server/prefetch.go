@@ -21,6 +21,7 @@ func (a *App) prefetchDaily(ctx context.Context) {
 			start := time.Now()
 			if a.prefetchDailyOnce(ctx) {
 				done = day
+				a.prefetched.Store(day)
 				a.log.Info("daily schedule: prefetched", "lines", len(a.meta.LineIDs()), "took", time.Since(start).Round(time.Second))
 			}
 		}
