@@ -119,7 +119,8 @@ func municipalRoute(tags map[string]string) bool {
 func round5(v float64) float64 { return math.Round(v*1e5) / 1e5 }
 
 // Parse reads an Overpass answer to Query. A route needs a municipality and at least one way;
-// its stops are the members with a stop role, or the platforms when it has no stop role. An
+// its stops are the members with a stop role in member order (a stop visited twice, e.g. the
+// start of a loop, is listed twice), or the platforms when it has no stop role. An
 // answer with no route, or with a runtime error remark (a partial answer), is an error.
 func Parse(body []byte) (*Data, error) {
 	var doc struct {
@@ -172,9 +173,9 @@ func Parse(body []byte) (*Data, error) {
 				}
 				stopAt[id] = s
 				if strings.HasPrefix(m.Role, "stop") {
-					stops = appendNew(stops, id)
+					stops = append(stops, id)
 				} else {
-					platforms = appendNew(platforms, id)
+					platforms = append(platforms, id)
 				}
 			}
 		}
@@ -218,13 +219,6 @@ func join(shape [][][2]float64, way [][2]float64) [][][2]float64 {
 		}
 	}
 	return append(shape, way)
-}
-
-func appendNew(ids []string, id string) []string {
-	if slices.Contains(ids, id) {
-		return ids
-	}
-	return append(ids, id)
 }
 
 func deref(s *string) string {

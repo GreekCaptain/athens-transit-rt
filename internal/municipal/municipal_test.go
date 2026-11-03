@@ -77,9 +77,10 @@ func TestParse(t *testing.T) {
 		t.Errorf("unknown municipality = %+v", r)
 	}
 
-	// Χαλάνδρι: stop roles win over platforms; a stop listed twice (entry and exit) counts once.
+	// Χαλάνδρι: stop roles win over platforms; a stop visited twice (a loop's start and end) is
+	// listed twice.
 	chal := d.Routes[3]
-	if !reflect.DeepEqual(chal.Stops, []string{"osm:n201", "osm:n203"}) {
+	if !reflect.DeepEqual(chal.Stops, []string{"osm:n201", "osm:n203", "osm:n201"}) {
 		t.Errorf("chalandri stops = %v", chal.Stops)
 	}
 	if _, ok := d.Stops["osm:n202"]; ok {

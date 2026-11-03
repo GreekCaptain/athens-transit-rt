@@ -703,7 +703,8 @@ Rules:
   - `ref`: the line's short name, `null` when OSM has none. `municipality`: the operator with
     its spaces normalised («Δήμος Παπάγου-Χολαργού»). `timetable_url`: that municipality's page
     (timetable, PDF or notices), `null` for a municipality the backend does not know.
-  - `stops`: Stop ids (`osm:n<node id>`) in route order, the members with a `stop` role, or the
+  - `stops`: Stop ids (`osm:n<node id>`) in route order (a stop visited twice, such as the
+    start and end of a loop, is listed twice), the members with a `stop` role, or the
     platforms when the route has none; `[]` when OSM has neither (10 routes today). `stops`
     (the map) holds every listed Stop; `name` is `null` when OSM has none.
   - Order: by `municipality`, then `ref`, then `name`. A failed poll keeps the last data.
