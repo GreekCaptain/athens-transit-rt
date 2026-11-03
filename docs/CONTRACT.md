@@ -716,7 +716,9 @@ Rules:
   comes from where each Pattern runs: a Pattern whose first and last Stops lie nearer the ends of
   the busiest Pattern than its swapped ends runs its way (a short turn included); 0 is the way
   towards the place after the last " - " of the Line name, the way `/v1/lines/{id}/schedule`
-  calls 0; a loop Line is 0. Metro/tram: the most common Pattern is 0; each other
+  calls 0; a loop Line is 0. When neither the name nor the headsigns tell the places apart (no
+  " - " in the name, or headsigns that name both or neither), the busiest Pattern's way is 0 and
+  may then differ from `/v1`. Metro/tram: the most common Pattern is 0; each other
   Pattern is 0 or 1 by the order of two Stops it shares with a Pattern already decided, so a
   branch that shares one Stop with the main Pattern (M3 airport) still gets the right one. M3:
   every Pattern towards ΕΛ. ΒΕΝΙΖΕΛΟΣ or Δ. ΠΛΑΚΕΝΤΙΑΣ is 1, every one towards ΔΗΜΟΤΙΚΟ ΘΕΑΤΡΟ
