@@ -15,21 +15,24 @@ when no bus is live. Fallback: the mean gap between runs.
 
 - **History**: the hourly fix files of the stopped mini PC container (`atrt_atrt-state`),
   2026-10-06 12:35 to 2026-10-29 02:37 (23 days, 540 files). 482 minutes with no fix at all
-  (server outages, runs of ≥ 5 empty minutes) are masked. Static GTFS 2026-07-08 (the feed the
-  rows were matched with).
+  (server outages, runs of ≥ 5 empty minutes) are masked, in test and in training days.
+  Static GTFS 2026-07-08 (the feed the rows were matched with).
 - **Lines** (12; two mid-route stops each, 22 stops): dense 040, 608, 550, Χ95; medium 224,
   421, 11, 721; sparse loop lines 914, 309Β; night 500, 790.
-- **Pass** = the time a vehicle's `s_m` crosses the stop's position on its shape, linear
+- **Pass** = the time a vehicle's `s_m` first crosses the stop's position on its shape, linear
   between two fixes ≤ 10 min apart. Two rules remove matcher jitter: a run counts only if it
   starts ≥ 1.5 km before the stop (or at the shape start), and the same bus at the same stop
   needs ≥ 0.6 × the trip time between passes (loop lines showed the same bus every ~20′).
-- **Day type**: weekday, Saturday, Sunday/holiday (2026-10-28 = Sunday). Service day 04:00-04:00.
-- **Queries**: every 5 min of every day at every stop (103,433). Truth = the next tracked pass
-  within 3 h; a query whose wait overlaps an outage is dropped.
-- **No live bus** = the bus that comes next had no fix on its run yet at query time. This is
-  the case the estimate is for. Share of queries: dense 13%, medium 25%, night 60%, sparse 67%.
+- **Day type**: weekday, Saturday, Sunday/holiday (2026-10-28 = Sunday). Service day 04:00-04:00
+  in local wall-clock time (the DST change of 2026-10-25 is handled).
+- **Queries**: every 5 min of every day at every stop (139,555). Truth = the next tracked pass
+  within 3 h. A query whose wait overlaps an outage is dropped. A query with no tracked pass
+  within 3 h (and no outage) is kept as **censored**.
+- **No live bus** = no bus that reaches the stop within 3 h was on its run at query time.
+  This is the case the estimate is for. Share of queries: dense 17%, medium 30%, night 89%,
+  sparse 86% (night and sparse include the hours without service).
 - **Leave-one-week-out**: a test day learns only from days of the same day type in the other
-  weeks (weekday ≈ 10-14 days, Saturday/Sunday 2-3 days).
+  weeks (weekday ≈ 10-14 days, Saturday 2, Sunday 2-3).
 
 Estimators (prediction = time of the next pass):
 
@@ -41,7 +44,8 @@ Estimators (prediction = time of the next pass):
 | H | history: median over training days of "the first pass after this time of day" |
 | G | headway fallback: now + median observed gap (±30 min, training days) / 2 |
 
-Error = |prediction − truth| in minutes. Scripts and full output:
+Error = |prediction − truth| in minutes. Unless stated, each table compares estimators on the
+same queries (all of them predict). Scripts and full output:
 [`scripts/headway-study/`](../../../scripts/headway-study/) (`results.txt`).
 
 ## Results
@@ -60,7 +64,7 @@ change of that count from week to week.
 | Χ95 | 3.9 | 0.30 | 0.6 /h | 0.88 |
 | 421 | 3.3 | 0.31 | 0.7 /h | 1.07 |
 | 11 | 2.2 | 0.53 | 0.7 /h | 0.74 |
-| 721 | 2.3 | 0.49 | 0.8 /h | 0.92 |
+| 721 | 2.3 | 0.47 | 0.8 /h | 0.90 |
 | 914 | 0.8 | 0.83 | 0.4 /h | 1.17 |
 | 309Β | 0.6 | 1.07 | 0.6 /h | 0.67 |
 
@@ -71,75 +75,96 @@ change of that count from week to week.
   GTFS trips.
 - The real timetable differs from the summer GTFS: 040 at 06:00 passes every 9′, GTFS says 21′.
 
-### 2. Does history beat "schedule only" when no bus is live?
+### 2. Coverage: the censored queries
 
-All day types, no live bus, queries where S and H both predict (n = 21,356):
+60% of the no-live queries have no tracked pass within 3 h: mostly hours without service
+(night lines by day, sparse lines in the evening), also buses without telematics. In these
+queries S still predicts a bus in 21% and H in 17%: a false "next ~HH:MM". 64% of the
+training-day lookups also find no pass. The error tables below cover only queries with a
+tracked pass.
+
+### 3. Does history beat "schedule only" when no bus is live?
+
+No live bus, queries where S, C and H all predict (n = 19,261):
 
 | | median | p75 | p90 | within 5′ |
 |---|---|---|---|---|
-| S schedule (GTFS) | 13.9′ | 41′ | 74′ | 29% |
-| C schedule corrected | 12.5′ | 42′ | 81′ | 37% |
-| **H history** | **11.4′** | **36′** | **73′** | **37%** |
-| G headway / 2 | 25.5′ | 54′ | 98′ | 11% |
+| S schedule (GTFS) | 13.6′ | 42′ | 78′ | 30% |
+| C schedule corrected | 11.1′ | 42′ | 82′ | 40% |
+| **H history** | **10.5′** | **37′** | **78′** | **39%** |
 
-H is closer than S by more than 1 min in 53% of queries and farther in 33%.
+H is closer than S by more than 1 min in 54% of queries and farther in 32%. C and H are about
+equal; C is better on night lines (median 3.5′ vs 3.9′), H has the shorter tail on sparse lines
+(p90 60′ vs 72′).
 
-Weekdays only, with the production timetable baseline D (n = 13,502):
+Headway fallback, on the queries where S, H and G all predict (n = 12,478): S 23.4′ / 17%
+within 5′, H 21.7′ / 26%, **G 28.2′ / 10%**.
+
+Weekdays only, with the production timetable baseline D (n = 12,668):
 
 | | median | p90 | within 5′ |
 |---|---|---|---|
-| S schedule (GTFS) | 12.4′ | 82′ | 32% |
-| D OASA daily schedule | 14.8′ | 84′ | 29% |
-| **H history** | **8.9′** | **82′** | **41%** |
+| S schedule (GTFS) | 12.6′ | 86′ | 33% |
+| D OASA daily schedule | 15.4′ | 90′ | 28% |
+| **H history** | **9.0′** | **86′** | **41%** |
 
-By line class (all day types, median / within 5′): dense S 20.1′/20%, H 19.3′/30%; medium S
-17.2′/25%, H 13.9′/34%; night S 6.9′/42%, H 4.9′/51%; sparse S 8.6′/36%, H 8.7′/40%.
+H is closer than D in 55% of these queries and farther in 29%.
 
-### 3. When can we trust a time?
+By line class (median / within 5′): dense S 21.7′/21%, H 22.3′/30%; medium S 17.9′/26%, H
+14.5′/37%; night S 5.8′/48%, H 3.9′/58%; sparse S 8.4′/37%, H 7.7′/43%.
 
-The spread of the training days (IQR of their "next pass" times) predicts the error well:
+### 4. When can we trust a time?
 
-| Spread (IQR) | Share of no-live queries | H median | H within 5′ | S median |
-|---|---|---|---|---|
-| ≤ 3′ | 26% | 3.7′ | 55% | 8.6′ |
-| 3-6′ | 21% | 7.9′ | 41% | 12.1′ |
-| 6-10′ | 16% | 15.5′ | 28% | 19.0′ |
-| > 10′ | 37% | 17.5-18.9′ | 25% | 17-19′ |
+With the proposed gate (≥ 3 training days, which keeps 83% of the queries above), the spread of
+the training days (IQR of their "next pass" times) predicts the error:
 
-Weekdays: spread ≤ 3′ covers 21% of the no-live queries, H median 2.1′ and 69% within 5′
-(D: 5.9′, 47%).
+| Spread (IQR) | Share of queries | H median | H p90 | H within 5′ | S median | S within 5′ |
+|---|---|---|---|---|---|---|
+| ≤ 3′ | 21% | 2.7′ | 60′ | 63% | 5.7′ | 48% |
+| 3-6′ | 19% | 6.7′ | 91′ | 44% | 10.6′ | 35% |
+| 6-10′ | 12% | 20.0′ | 112′ | 32% | 23.6′ | 24% |
+| > 10′ | 30% | 21.2′ | 88′ | 25% | 22.4′ | 19% |
 
-### 4. Where the error comes from
+The rule "≥ 3 days and spread ≤ 3′" fires on 23% of weekday queries (H median 2.1′, p90 56′,
+68% within 5′; S median 4.5′) and 30% of Sunday queries (H 4.2′, p90 66′, 51%; S 8.8′). It
+never fires on Saturdays here: only 2 training days. Even when it fires, about 1 in 10 waits
+is an hour longer than the estimate.
 
-In 26-31% of the no-live queries (31% where S and H both predict) the real next bus came more than 20 min after both S and H said:
-the expected run did not come (cancelled, or a bus without working telematics). No estimator
-can see that; it sets the p90 of all of them at 60-100′. When the expected bus did come, H
-has a median error of 4.3′ (S 6.6′).
+### 5. The long tail
+
+In 26-32% of the no-live queries the next tracked pass came more than 20 min after both S and
+H. This is selected on the outcome, so it does not prove a cause; likely causes are a run that
+did not run, or a bus without working telematics. These queries set the p90 of every estimator
+at 60-110′.
 
 ### Answers
 
 1. Stable enough on dense and medium lines at the hour level; not on sparse loop lines.
-2. History beats schedule-only, but modestly: median 13.9′ → 11.4′ (weekdays 12.4′ → 8.9′),
-   within 5′ 29% → 37% (weekdays 32% → 41%). It beats the production daily-schedule baseline
-   in 54% of weekday queries and loses in 28%.
-3. A real gain only where past weeks agree (spread ≤ 3′, about 1 in 4 no-live cases): median
-   2-4′, 55-69% within 5′.
-4. "Mean gap" as a time (now + gap / 2) is the worst (11% within 5′). Use the headway only as
+2. History beats schedule-only, but modestly: median 13.6′ → 10.5′ (weekdays 12.6′ → 9.0′),
+   within 5′ 30% → 39% (weekdays 33% → 41%). It beats the production daily-schedule baseline
+   in 55% of weekday queries and loses in 29%.
+3. A real gain only where past weeks agree (≥ 3 days, spread ≤ 3′; about 1 in 4 no-live
+   queries on weekdays and Sundays): median 2-4′, 51-68% within 5′. The tail stays: p90 ~60′.
+4. "Mean gap" as a time (now + gap / 2) is the worst (10% within 5′). Use the headway only as
    text ("every ~15′"), never as a time.
-5. "Schedule corrected by history" (C) does not beat plain history (H). The schedule is best
-   used as a guard (does the line run today, which day type), not as the base.
+5. "Schedule corrected by history" (C) is about as good as plain history (H). H needs no
+   timetable, so it also works when the GTFS is expired or wrong. Use the schedule as a guard
+   (does the line run today, which day type).
+6. Without a guard, an estimate also appears when no bus comes at all (17-21% of the censored
+   queries).
 
 ## Proposal
 
 ### Estimator
 
-Per (line, stop, headsign, day type), from the last 28 days of history:
+Per (line, stop, headsign, day type), from the last 28 days of history (outage hours left out):
 
 - `next(q)` = median over training days of the first pass after time of day `q`;
   `spread(q)` = IQR of those passes; `days(q)` = training days with a pass within 3 h.
 - `headway(h)` = median gap between passes in hour `h` over training days (needs ≥ 6 gaps).
 - Card rule, per line + headsign with no live Arrival:
-  1. `days ≥ 3` and `spread ≤ 3′` → a time: "~21:40".
+  1. `days ≥ 3`, `spread ≤ 3′`, and most training days had a pass within 3 h (not measured) → a time:
+     "~21:40, estimate".
   2. else, `headway(h)` known → "usually every ~H′"; add "sparser after HH:00" when
      `headway(h+1) ≥ 1.5 × headway(h)`.
   3. else nothing.
@@ -152,12 +177,16 @@ Per (line, stop, headsign, day type), from the last 28 days of history:
 - A nightly job, next to the daily statistics job, reads the history files already on disk.
   No new OASA requests.
 - It writes, per (line, stop, headsign, day type), the distinct `next(q)` values on a 5-min
-  grid with their spread and days, and the hourly headways. Size: the GTFS has about 18,000
-  line-stop pairs and 650k scheduled stop passes per weekday (550k Saturday, 400k Sunday), so
-  about 1.6M entries × 4 bytes ≈ 7 MB, in memory and as a file in the state directory.
+  grid with their spread and days (one row = minute of service day uint16 + spread uint8 + days
+  uint8 = 4 B), and the hourly headways.
+- Size, measured on the study stops: 5.45 rows per scheduled pass. The GTFS has 1.61M scheduled
+  stop passes over the three day types, so about 8.8M rows ≈ 35 MB, plus 2.6 MB of hourly
+  headways. That is too much for memory under `mem_limit: 200m`. Keep it as a file in the
+  state directory, sorted by stop, with an index; `/v2/stops/{id}` reads one stop's slice
+  (about 4 KB on average). Phase 2 can test a coarser grid to shrink it.
 - `/v2/stops/{id}` serves it as a new additive field. Web and app read the same field.
-- Not a static file: 8,040 stops means per-stop files or a ~7 MB download, and the app would
-  need a second path. Not computed per request: that needs all raw passes of 28 days in memory.
+- Not a static file for the web: 35 MB, or 8,040 per-stop files, and the app would need a second
+  path. Not computed per request from raw passes: that needs all passes of 28 days.
 
 ### Contract sketch (`/v2/stops/{id}`, additive)
 
@@ -187,11 +216,12 @@ Per (line, stop, headsign, day type), from the last 28 days of history:
 
 ## Decisions for Harold
 
-1. Show a time only when past weeks agree (spread ≤ 3′: about 1 in 4 no-live cases, 55-69%
-   within 5′), else the headway text? Or always a time (median error 9-11′)? Recommended:
-   only when they agree.
+1. Show a time only when past weeks agree (≥ 3 days, spread ≤ 3′: about 1 in 4 no-live cases,
+   51-68% within 5′, but about 1 in 10 still an hour off), else the headway text? Or always a
+   time (median error 9-11′, p90 ~80′)? Recommended: only when they agree, worded as an
+   estimate.
 2. Wording 1, 2 or 3.
-3. Backend field on `/v2/stops/{id}` (recommended) or a static file.
+3. Backend field on `/v2/stops/{id}` from a 35 MB disk table (recommended), or a static file.
 
 ## Limits
 
@@ -204,6 +234,5 @@ Per (line, stop, headsign, day type), from the last 28 days of history:
 - S is the summer GTFS. D applies the 2026-11-03 daily schedule to October weekdays (October's
   daily schedules were not stored); the loop lines 309Β and 914 fit it badly, maybe because
   their timetable changed.
-- Pass detection on loop line 309Β finds only 55-67% of the GTFS passes.
-- "No live bus" here = the next bus had no fix on its run. In production, OASA's own
-  predictions (contract rev 11) cover part of these cases.
+- Pass detection on loop line 309Β finds only 52-54% of the GTFS passes (night lines 500 and 790 see 1.2-1.4×: the summer GTFS has fewer night runs than OASA runs).
+- In production, OASA's own predictions (contract rev 11) cover part of the no-live cases.

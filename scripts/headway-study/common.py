@@ -13,3 +13,7 @@ def midnight(d): return int(datetime(d.year,d.month,d.day,tzinfo=TZ).timestamp()
 def service_day(ts):   # service day runs 04:00 -> 04:00
     dt=datetime.fromtimestamp(ts,TZ); d=dt.date()
     return d-timedelta(1) if dt.hour<4 else d
+def at(d,q):   # unix time of wall-clock second q after local midnight of d (DST safe)
+    return int((datetime(d.year,d.month,d.day)+timedelta(seconds=int(q))).replace(tzinfo=TZ).timestamp())
+def wall(ts,d):  # wall-clock seconds of ts after local midnight of d
+    return (datetime.fromtimestamp(int(ts),TZ).replace(tzinfo=None)-datetime(d.year,d.month,d.day)).total_seconds()

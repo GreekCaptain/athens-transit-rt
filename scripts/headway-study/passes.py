@@ -47,7 +47,7 @@ for (veh,sid),g in h.groupby(['veh','shape_id'],sort=False):
         tt,ss=t[a:b],s[a:b]; first=tt[0]
         for (sid2,stop,k),A in stoppos.items():
             if sid2!=sid or k<2: continue        # skip first two stops (terminus dwell)
-            if not (ss[0]<A<=ss[-1]): continue
+            if not (ss[0]<A and (ss>=A).any()): continue   # a crossing exists (later jitter back is fine)
             if not (ss[0]<=A-1500 or ss[0]<=200): continue   # jitter re-runs start near the stop
             j=np.argmax(ss>=A)
             if j==0: continue
