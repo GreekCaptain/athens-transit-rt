@@ -39,7 +39,17 @@ func writeHour(t *testing.T, dir string, hour time.Time, fixes []fix) {
 	writeArchive(t, filepath.Join(dir, hour.UTC().Format("2006-01-02T15")+".csv.gz"), feed, fixes)
 }
 
+// oldHeader is the history header before the run columns: the archives written before the
+// upgrade, still read.
+const oldHeader = "fix_t,line,route_code,veh,lat,lon,gtfs,trip_id,shape_id,s_m,delay_s\n"
+
 func writeArchive(t *testing.T, path, gtfs string, fixes []fix) {
+	t.Helper()
+	writeArchiveAs(t, path, gtfs, fixes, oldHeader, "")
+}
+
+// writeArchiveAs writes the rows under header, each ending with tail (the extra columns).
+func writeArchiveAs(t *testing.T, path, gtfs string, fixes []fix, header, tail string) {
 	t.Helper()
 	f, err := os.Create(path)
 	if err != nil {
@@ -47,9 +57,9 @@ func writeArchive(t *testing.T, path, gtfs string, fixes []fix) {
 	}
 	zw := gzip.NewWriter(f)
 	var b strings.Builder
-	b.WriteString(history.Header)
+	b.WriteString(header)
 	for _, x := range fixes {
-		fmt.Fprintf(&b, "%d,L,RC,%s,37980000,23720000,%s,T1,%s,%d,0\n", mon0800.Unix()+int64(x.dt), x.veh, gtfs, x.shape, x.s)
+		fmt.Fprintf(&b, "%d,L,RC,%s,37980000,23720000,%s,T1,%s,%d,0%s\n", mon0800.Unix()+int64(x.dt), x.veh, gtfs, x.shape, x.s, tail)
 	}
 	zw.Write([]byte(b.String()))
 	zw.Close()
@@ -162,6 +172,20 @@ func TestSmallForwardMoves(t *testing.T) {
 	}
 }
 
+// TestNewHeader: archives with the run columns (history.Header) give the same speeds.
+func TestNewHeader(t *testing.T) {
+	old, cur := t.TempDir(), t.TempDir()
+	writeHour(t, old, mon0800, moving())
+	writeArchiveAs(t, filepath.Join(cur, mon0800.UTC().Format("2006-01-02T15")+".csv.gz"), feed, moving(), history.Header, ",1791000000,60")
+	for _, bin := range []int{0, 1} {
+		a, okA := build(t, old).Speed("SH", bin, 8)
+		b, okB := build(t, cur).Speed("SH", bin, 8)
+		if !okA || !okB || a != b {
+			t.Fatalf("bin %d: old %v %v, new %v %v", bin, a, okA, b, okB)
+		}
+	}
+}
+
 // TestWindow: only gzipped archives inside [from, to) are read; the open hour (plain CSV) is not.
 func TestWindow(t *testing.T) {
 	dir := t.TempDir()
@@ -169,7 +193,7 @@ func TestWindow(t *testing.T) {
 	old := mon0800.Add(-3 * 24 * time.Hour)
 	writeHour(t, dir, old, []fix{{-3 * 86400, "o", "SH2", 0}, {-3*86400 + 200, "o", "SH2", 0}})
 	os.WriteFile(filepath.Join(dir, mon0800.Add(time.Hour).Format("2006-01-02T15")+".csv"),
-		[]byte(history.Header+fmt.Sprintf("%d,L,RC,p,37980000,23720000,2026-07-08,T1,SH3,0,0\n%d,L,RC,p,37980000,23720000,2026-07-08,T1,SH3,0,0\n",
+		[]byte(oldHeader+fmt.Sprintf("%d,L,RC,p,37980000,23720000,2026-07-08,T1,SH3,0,0\n%d,L,RC,p,37980000,23720000,2026-07-08,T1,SH3,0,0\n",
 			mon0800.Unix()+3600, mon0800.Unix()+3800)), 0o644)
 	tab := build(t, dir)
 	if _, ok := tab.Speed("SH", 0, 8); !ok {
@@ -279,7 +303,7 @@ func TestMalformedInput(t *testing.T) {
 	dir := t.TempDir()
 	h := mon0800.Format("2006-01-02T15")
 	var b strings.Builder
-	b.WriteString(history.Header)
+	b.WriteString(oldHeader)
 	row := func(dt int, veh, sm string) {
 		fmt.Fprintf(&b, "%d,L,RC,%s,37980000,23720000,%s,T1,SH,%s,0\n", mon0800.Unix()+int64(dt), veh, feed, sm)
 	}

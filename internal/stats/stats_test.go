@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/angelospk/athens-transit-rt/internal/history"
 )
 
 var athens = mustLoc("Europe/Athens")
@@ -40,7 +38,7 @@ func row(f fix) string {
 func writeHour(t *testing.T, dir, name, ext string, fixes ...fix) {
 	t.Helper()
 	var b strings.Builder
-	b.WriteString(history.Header)
+	b.WriteString(oldHeader)
 	for _, f := range fixes {
 		b.WriteString(row(f))
 	}

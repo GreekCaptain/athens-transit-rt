@@ -8,6 +8,13 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
 
 ## Unreleased
 
+### Statistics
+- Daily stats files get `start_delay` (contract rev 16): per line, how late the runs of OASA's
+  daily schedule left their first stop (runs measured, mean, p90, and a minute histogram so
+  several days add up). Measured for buses seen leaving on a clear run (#55); days without it
+  are unchanged. The fix history gets two trailing columns for it, `run_start` and
+  `start_delay_s` ([#72](https://github.com/angelospk/athens-transit-rt/issues/72)).
+
 ### Live API
 - `/v2` OASA Patterns and bus Vehicles have both directions (contract rev 15): OASA's GTFS has
   no `direction_id`, so every Pattern was 0 (`oasa:040`: 5512 and 5513 both 0). The direction now

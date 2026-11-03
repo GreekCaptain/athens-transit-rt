@@ -61,7 +61,7 @@ func TestWritesNewFixesOnce(t *testing.T) {
 	w.Close()
 	w.Add(Row{FixT: 200, Veh: "C"}) // after Close: dropped, counted
 	got := read(t, filepath.Join(dir, "2026-10-06T08.csv"))
-	want := Header + `100,040,3922,A,37975500,23734800,2026-10-06,"T,1 ""x""",S1,1234,140` + "\n" + "100,Α1,,B,-1500000,0,,,,-1,\n"
+	want := Header + `100,040,3922,A,37975500,23734800,2026-10-06,"T,1 ""x""",S1,1234,140,,` + "\n" + "100,Α1,,B,-1500000,0,,,,-1,,,\n"
 	if got != want || w.Written() != 2 || w.Dropped() != 1 || w.Lost() != 0 {
 		t.Fatalf("got %q (written %d, dropped %d, lost %d)", got, w.Written(), w.Dropped(), w.Lost())
 	}
@@ -74,7 +74,7 @@ func TestRotatesAndGzipsHours(t *testing.T) {
 	now = now.Add(time.Hour)
 	w.write(Row{FixT: 2, Veh: "A", SM: -1})
 	w.closeFile()
-	if got := read(t, filepath.Join(dir, "2026-10-06T08.csv.gz")); got != Header+"1,,,A,0,0,,,,-1,\n" {
+	if got := read(t, filepath.Join(dir, "2026-10-06T08.csv.gz")); got != Header+"1,,,A,0,0,,,,-1,,,\n" {
 		t.Fatalf("old hour %q", got)
 	}
 	if names(t, dir) != "2026-10-06T08.csv.gz 2026-10-06T09.csv" {
@@ -102,21 +102,55 @@ func TestRestartsKeepEveryRow(t *testing.T) {
 	w, _ = newWriter(dir, 1<<30, 30*24*time.Hour, clock(&now), quiet) // same hour
 	w.write(Row{FixT: 2, Veh: "A", SM: -1})
 	w.closeFile()
-	if got := read(t, filepath.Join(dir, "2026-10-06T08.csv")); got != Header+"1,,,A,0,0,,,,-1,\n2,,,A,0,0,,,,-1,\n" {
+	if got := read(t, filepath.Join(dir, "2026-10-06T08.csv")); got != Header+"1,,,A,0,0,,,,-1,,,\n2,,,A,0,0,,,,-1,,,\n" {
 		t.Fatalf("same-hour restart %q", got)
 	}
 	now = now.Add(time.Hour)
 	newWriter(dir, 1<<30, 30*24*time.Hour, clock(&now), quiet)
-	os.WriteFile(filepath.Join(dir, "2026-10-06T08.csv"), []byte(Header+"3,,,A,0,0,,,,-1,\n"), 0o644) // written by a clock that was behind
+	os.WriteFile(filepath.Join(dir, "2026-10-06T08.csv"), []byte(Header+"3,,,A,0,0,,,,-1,,,\n"), 0o644) // written by a clock that was behind
 	newWriter(dir, 1<<30, 30*24*time.Hour, clock(&now), quiet)
 	if got := names(t, dir); got != "2026-10-06T08.1.csv.gz 2026-10-06T08.csv.gz" {
 		t.Fatalf("files %v", got)
 	}
-	if got := read(t, filepath.Join(dir, "2026-10-06T08.csv.gz")); got != Header+"1,,,A,0,0,,,,-1,\n2,,,A,0,0,,,,-1,\n" {
+	if got := read(t, filepath.Join(dir, "2026-10-06T08.csv.gz")); got != Header+"1,,,A,0,0,,,,-1,,,\n2,,,A,0,0,,,,-1,,,\n" {
 		t.Fatalf("first archive %q", got)
 	}
-	if got := read(t, filepath.Join(dir, "2026-10-06T08.1.csv.gz")); got != Header+"3,,,A,0,0,,,,-1,\n" {
+	if got := read(t, filepath.Join(dir, "2026-10-06T08.1.csv.gz")); got != Header+"3,,,A,0,0,,,,-1,,,\n" {
 		t.Fatalf("second archive %q", got)
+	}
+}
+
+// The run of OASA's daily schedule a bus left on, and its start delay, end the row.
+func TestWritesTheRunAndItsStartDelay(t *testing.T) {
+	dir, now := t.TempDir(), t0
+	w, _ := newWriter(dir, 1<<30, 30*24*time.Hour, clock(&now), quiet)
+	d, sd := 140, -30
+	w.write(Row{FixT: 1, Line: "040", Veh: "A", SM: 5, DelayS: &d, RunStart: 1791000000, StartDelayS: &sd})
+	w.closeFile()
+	if got := read(t, filepath.Join(dir, "2026-10-06T08.csv")); got != Header+"1,040,,A,0,0,,,,5,140,1791000000,-30\n" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// After an upgrade the hour's file may have the old header: it is gzipped as it is, and the new
+// rows go to a new file, never under a header of other columns.
+func TestSealsAFileOfAnOldHeader(t *testing.T) {
+	dir, now := t.TempDir(), t0
+	const old = "fix_t,line,route_code,veh,lat,lon,gtfs,trip_id,shape_id,s_m,delay_s\n"
+	os.WriteFile(filepath.Join(dir, "2026-10-06T08.csv"), []byte(old+"1,,,A,0,0,,,,-1,\n"), 0o644)
+	w, _ := newWriter(dir, 1<<30, 30*24*time.Hour, clock(&now), quiet)
+	w.write(Row{FixT: 2, Veh: "A", SM: -1})
+	w.closeFile()
+	if got := read(t, filepath.Join(dir, "2026-10-06T08.csv.gz")); got != old+"1,,,A,0,0,,,,-1,\n" {
+		t.Fatalf("old archive %q", got)
+	}
+	if got := read(t, filepath.Join(dir, "2026-10-06T08.csv")); got != Header+"2,,,A,0,0,,,,-1,,,\n" {
+		t.Fatalf("new file %q", got)
+	}
+	now = now.Add(time.Hour)
+	newWriter(dir, 1<<30, 30*24*time.Hour, clock(&now), quiet)
+	if got := names(t, dir); got != "2026-10-06T08.1.csv.gz 2026-10-06T08.csv.gz" {
+		t.Fatalf("files %v", got)
 	}
 }
 
@@ -125,13 +159,13 @@ func TestRestartsKeepEveryRow(t *testing.T) {
 func TestCompressionRetryIsIdempotent(t *testing.T) {
 	dir, now := t.TempDir(), t0
 	part := filepath.Join(dir, "2026-10-06T07.csv.part")
-	os.WriteFile(part, []byte(Header+"1,,,A,0,0,,,,-1,\n"), 0o644)
+	os.WriteFile(part, []byte(Header+"1,,,A,0,0,,,,-1,,,\n"), 0o644)
 	gzipFile(part, filepath.Join(dir, "2026-10-06T07.csv.gz"))
 	newWriter(dir, 1<<30, 30*24*time.Hour, clock(&now), quiet)
 	if got := names(t, dir); got != "2026-10-06T07.csv.gz" {
 		t.Fatalf("files %v", got)
 	}
-	if got := read(t, filepath.Join(dir, "2026-10-06T07.csv.gz")); got != Header+"1,,,A,0,0,,,,-1,\n" {
+	if got := read(t, filepath.Join(dir, "2026-10-06T07.csv.gz")); got != Header+"1,,,A,0,0,,,,-1,,,\n" {
 		t.Fatalf("archive %q", got)
 	}
 }
@@ -139,11 +173,11 @@ func TestCompressionRetryIsIdempotent(t *testing.T) {
 // A row a failed write left half done is cut before the next one.
 func TestCutsAPartialRow(t *testing.T) {
 	dir, now := t.TempDir(), t0
-	os.WriteFile(filepath.Join(dir, "2026-10-06T08.csv"), []byte(Header+"1,,,A,0,0,,,,-1,\n2,,,A,0"), 0o644)
+	os.WriteFile(filepath.Join(dir, "2026-10-06T08.csv"), []byte(Header+"1,,,A,0,0,,,,-1,,,\n2,,,A,0"), 0o644)
 	w, _ := newWriter(dir, 1<<30, 30*24*time.Hour, clock(&now), quiet)
 	w.write(Row{FixT: 3, Veh: "A", SM: -1})
 	w.closeFile()
-	if got := read(t, filepath.Join(dir, "2026-10-06T08.csv")); got != Header+"1,,,A,0,0,,,,-1,\n3,,,A,0,0,,,,-1,\n" {
+	if got := read(t, filepath.Join(dir, "2026-10-06T08.csv")); got != Header+"1,,,A,0,0,,,,-1,,,\n3,,,A,0,0,,,,-1,,,\n" {
 		t.Fatalf("got %q", got)
 	}
 }

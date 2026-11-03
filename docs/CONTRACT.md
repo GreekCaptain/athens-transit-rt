@@ -14,10 +14,12 @@ Source of truth: `athens-transit-rt/docs/CONTRACT.md`. The frontend keeps a copy
   frontend repo by whoever made it (backend thread opens the copy as a commit or
   issue on the frontend repo).
 
-Revision: 15 (2026-11-03): OASA Patterns and bus Vehicles get both directions, 0 and 1 (the
+Revision: 16 (2026-11-03): the daily statistics files (`/v1/stats/days/{date}`, the `stats`
+branch) get `start_delay`, how late each line's runs of OASA's daily schedule left their first
+stop ([API.md](API.md#start-delays-start_delay)); days without it are as before
+(rev 15: OASA Patterns and bus Vehicles get both directions, 0 and 1 (the
 GTFS has no `direction_id`, so all were 0); metro M2 `headsign` is where the train goes, not
-where it starts
-(rev 14: on an expired GTFS, `delay_s` (and a stop board's `scheduled`) of a
+where it starts; rev 14: on an expired GTFS, `delay_s` (and a stop board's `scheduled`) of a
 bus seen leaving on a clear run of OASA's daily schedule is against that run; rev 13: `GET /v2/alerts`, service disruptions (OASA notices and strikes); rev 12: `direction` on `/v2` Vehicles; STASY Pattern directions follow branches (M3 airport);
 rev 11: `/v2/stops/{id}` bus Arrivals include OASA's own predictions; rev 10: live responses send `Access-Control-Expose-Headers: Date`; rev 9: `at_terminus` on `/v1/lines/{line_id}` vehicles and `/v2` Vehicles; rev 8: `GET /v1/stops/{stop_id}` (a stop board); the unified `/v2` API
 ([below](#unified-api-v2-rev-8)); rev 7: `path_speeds` also follow today's traffic (same shape and units); rev 6: `path_speeds` on vehicles (typical speeds ahead); rev 5: `GET /v1/vehicles/tiles/{z}/{x}/{y}`; rev 4: `path_beyond` and `path_stops` on vehicles; rev 3: `GET /v1/vehicles`; `speed` and

@@ -361,15 +361,21 @@ func (a *App) onLine(p sched.LinePoll) {
 	}
 	for i := range results {
 		vehicles[i], board[i] = a.vehicleView(w, &results[i])
-		if a.hist != nil {
-			a.hist.Add(historyRow(w, p.Line, &results[i], ver))
-		}
 	}
 	// After vehicleView: it records the departures the shifts need.
-	daily := a.dailyShifts(w.feed, p.Line, results, p.Done)
+	daily, runs := a.dailyShifts(w.feed, p.Line, results, p.Done)
 	for i, s := range daily {
 		if s != 0 {
 			vehicles[i].DelayS = ptr(results[i].Delay - int(s))
+		}
+	}
+	if a.hist != nil {
+		for i := range results {
+			row := historyRow(w, p.Line, &results[i], ver)
+			if i < len(runs) && !runs[i].start.IsZero() {
+				row.RunStart, row.StartDelayS = runs[i].start.Unix(), ptr(runs[i].late)
+			}
+			a.hist.Add(row)
 		}
 	}
 	a.matchMu.Unlock()

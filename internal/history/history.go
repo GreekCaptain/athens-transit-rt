@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	Header     = "fix_t,line,route_code,veh,lat,lon,gtfs,trip_id,shape_id,s_m,delay_s\n"
+	Header     = "fix_t,line,route_code,veh,lat,lon,gtfs,trip_id,shape_id,s_m,delay_s,run_start,start_delay_s\n"
 	hourLayout = "2006-01-02T15" // file names, UTC
 	bufferRows = 4096
 	flushEvery = 10 * time.Second
@@ -31,7 +31,9 @@ const (
 )
 
 // Row is one GPS fix. Lat and Lon are degrees; SM is metres along the shape, -1 when unknown;
-// TripID, ShapeID and DelayS are empty / nil when the vehicle is not matched to a trip.
+// TripID, ShapeID and DelayS are empty / nil when the vehicle is not matched to a trip. RunStart
+// (unix s) is the departure of the run of OASA's daily schedule the bus left on and StartDelayS
+// how late it left on it; 0 / nil when not known.
 type Row struct {
 	FixT                 int64
 	Line, RouteCode, Veh string
@@ -40,6 +42,8 @@ type Row struct {
 	TripID, ShapeID      string
 	SM                   int32
 	DelayS               *int
+	RunStart             int64
+	StartDelayS          *int
 }
 
 // SM converts metres along a shape for Row.SM: -1 when not a usable distance.
@@ -179,12 +183,15 @@ func (w *Writer) write(r Row) {
 		w.lost.Add(1)
 		return
 	}
-	delay := ""
+	delay, run, start := "", "", ""
 	if r.DelayS != nil {
 		delay = strconv.Itoa(*r.DelayS)
 	}
+	if r.RunStart != 0 && r.StartDelayS != nil {
+		run, start = strconv.FormatInt(r.RunStart, 10), strconv.Itoa(*r.StartDelayS)
+	}
 	w.cw.Write([]string{strconv.FormatInt(r.FixT, 10), oneLine(r.Line), oneLine(r.RouteCode), oneLine(r.Veh),
-		micro(r.Lat), micro(r.Lon), oneLine(r.GTFS), oneLine(r.TripID), oneLine(r.ShapeID), strconv.Itoa(int(r.SM)), delay})
+		micro(r.Lat), micro(r.Lon), oneLine(r.GTFS), oneLine(r.TripID), oneLine(r.ShapeID), strconv.Itoa(int(r.SM)), delay, run, start})
 	w.pending++
 }
 
@@ -288,7 +295,8 @@ func (w *Writer) endHour() {
 	}
 }
 
-// compressLeftovers gzips every plain .csv except the current hour's. Each gets its own
+// compressLeftovers gzips every plain .csv except the current hour's (unless it has another
+// header: written before an upgrade, it must not get rows of other columns). Each gets its own
 // archive (hour.csv.gz, then hour.1.csv.gz, ... after a restart within the hour), each with its
 // header. Retries are idempotent: the CSV is first renamed to .part, and a .part whose archive
 // exists was already gzipped.
@@ -296,7 +304,7 @@ func (w *Writer) compressLeftovers(current string) {
 	names, _ := filepath.Glob(filepath.Join(w.dir, "*.csv"))
 	for _, p := range names {
 		hour := strings.TrimSuffix(filepath.Base(p), ".csv")
-		if hour == current {
+		if hour == current && !otherHeader(p) {
 			continue
 		}
 		for k := 0; ; k++ {
@@ -325,6 +333,19 @@ func (w *Writer) compressLeftovers(current string) {
 		}
 		os.Remove(part)
 	}
+}
+
+// otherHeader says whether the file at p starts with a header other than Header (an empty or
+// missing file has none).
+func otherHeader(p string) bool {
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	b := make([]byte, len(Header))
+	n, _ := io.ReadFull(f, b)
+	return n > 0 && string(b[:n]) != Header
 }
 
 func exists(p string) bool {
