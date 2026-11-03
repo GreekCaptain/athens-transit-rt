@@ -471,7 +471,14 @@ func TestClientGapOverlapsConnect(t *testing.T) {
 		}()
 	}
 	// A stray request (another process, a port probe) hits the server mid-run: it must not count.
-	go http.Get(srv.URL + "/stray")
+	res, err := http.Get(srv.URL + "/stray")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("stray request: HTTP %d", res.StatusCode)
+	}
 	wg.Wait()
 	close(errs)
 	for err := range errs {
