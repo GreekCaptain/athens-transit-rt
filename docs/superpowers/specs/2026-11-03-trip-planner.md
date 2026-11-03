@@ -60,7 +60,11 @@ Steady (one service day), estimates that the phase 2 benchmark must confirm:
   `429 busy`. So the worst query memory is ≈ 1 MB.
 - Acceptance (phase 2, on the mini PC, weekday timetable): steady heap growth ≤ 20 MB; peak
   heap growth ≤ 40 MB, sampled (`runtime/metrics`, every 10 ms) during a build with 2 queries
-  running; build ≤ 2 s; `last=true` p95 ≤ 150 ms, `last=false` p95 ≤ 100 ms. If the heap is over budget,
+  running; build ≤ 2 s; `last=true` p95 ≤ 150 ms, `last=false` p95 ≤ 100 ms. Heap growth does
+  not prove the service fits the container, so the same run is also measured whole: the
+  service image with the real state, live polling on, a rebuild forced while 2 plans run, and
+  the cgroup's `memory.peak` (or `docker stats` max) must stay ≤ 160 MB (80 % of
+  `mem_limit: 200m`), with the baseline before the change written next to it. If over budget,
   the first cut is the transfers (lower the radius to 400 m), then int16 times relative to the
   route's first departure.
 
@@ -81,8 +85,10 @@ Times are seconds from the service day's GTFS reference ("noon minus 12 h" of da
 window is [D 03:00, D+1 03:00) by first departure, but the native calendars differ: OASA's GTFS
 and STASY use calendar service dates with times past 24 h, the suburban boards are per calendar
 date. So each adapter takes the native dates that can have a run starting in the window,
-shifts each trip's times by (native date − D) days, and keeps the trips whose first departure
-is in the window. Each trip keeps its native date in its Run id (§3).
+turns each native time into an instant (the native date's own reference, "noon minus 12 h" of
+that date, plus the seconds), then into seconds from D's reference. A plain shift by whole
+days would be wrong on DST nights, when two references are 82,800 or 90,000 s apart. The
+adapter keeps the trips whose first departure is in the window. Each trip keeps its native date in its Run id (§3).
 
 - `oasa`: while the GTFS is current, trips active on D (all their times) and on D+1 (only those
   starting before 03:00). On an expired GTFS, `dailyRuns` of every line
@@ -132,8 +138,10 @@ around `to`.
   journey that leaves later arrives at `to` no later with no more transfers. At the end the
   `n` journeys that leave first are returned.
 - `last=true`: the same, but τ runs from the latest one of the service day down to `after`.
-  The search stops after the τ at which `n` journeys are kept: that τ is finished first, all
-  its journeys go through the dominance rule and the sort, then the list is cut to `n`.
+  The search stops after the τ at which `n` journeys are kept: that τ is finished first and
+  all its journeys go through the dominance rule. Then the `n` journeys that leave latest are
+  picked (ties: earlier arrival, then fewer transfers), and only then sorted by `depart_at`
+  for the response. Sorting ascending before the cut would drop the latest ones.
 - Rounds: K = 4 rides. Target pruning: a label later than the best arrival at `to` for that
   round is dropped.
 - Ties: plain RAPTOR keeps one arrival label per stop and round, so at equal (departure,
@@ -142,8 +150,12 @@ around `to`.
   memory and time for little gain on the evening question.)
 - Run ids: OASA daily runs of D stay valid for `/v2/runs/{id}` until 03:00 of D+1. Today
   `dailyRun` (`internal/server/v2_oasa.go`) checks the id's date against the calendar day and
-  reads the daily cache of `Midnight(now)`; phase 2 makes it accept D between 00:00 and 03:00
-  of D+1 (the cache entry of D is still there: the prefetch replaces it after 03:00).
+  reads the daily cache of `Midnight(now)`. The cache entry of D is not safe after midnight:
+  `/v1/lines/{id}/schedule` (`dailyVia`, `internal/server/schedule.go`) replaces a line's
+  entry with D+1 when someone asks then. So the planner's timetable is the copy that counts: it
+  holds D's daily runs (line, stand-in trip, departure) until its next build, and phase 2
+  makes `dailyRun` answer an id dated D between 00:00 and 03:00 of D+1 from the planner's
+  timetable, with D's times.
 - The journey is rebuilt from the back pointers (route, trip, board stop, alight stop, or a
   transfer), then turned into contract legs. `lines` and `stops` come from the adapters' Line
   and Stop objects.

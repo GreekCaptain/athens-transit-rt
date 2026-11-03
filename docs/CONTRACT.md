@@ -886,8 +886,9 @@ Rules:
   `from` at the same time or later, arrives at `to` at the same time or earlier, and has no
   more transfers. At equal times and transfers only one is returned; which one is not fixed.
   `last=true` gives the `n` options that leave latest (some may arrive after 03:00);
-  `last=false` the `n` options that leave first, looking at most 3 h past `after`. Both lists
-  are sorted by `depart_at`, then `arrive_at`, then `transfers`. Fewer than `n` (or none) when
+  `last=false` the `n` options that leave first, looking at most 3 h past `after`. The `n` are
+  picked first (ties: earlier arrival, then fewer transfers); the list is then sorted by
+  `depart_at`, then `arrive_at`, then `transfers`. Fewer than `n` (or none) when
   fewer exist: `200` with `itineraries: []` after the last run of the day.
 - **`walk_only`**: `{"distance_m": …, "duration_s": …}` when `from` and `to` are at most
   1000 m apart (straight line), else `null`. It is never one of the `itineraries`.
