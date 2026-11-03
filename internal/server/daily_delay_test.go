@@ -3,10 +3,17 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/angelospk/athens-transit-rt/internal/gtfs"
+	"github.com/angelospk/athens-transit-rt/internal/history"
 	"github.com/angelospk/athens-transit-rt/internal/model"
 	"github.com/angelospk/athens-transit-rt/internal/sched"
 	"github.com/angelospk/athens-transit-rt/internal/telematics"
@@ -131,5 +138,59 @@ func TestDelayAgainstDailyRunFallbacks(t *testing.T) {
 		if got.DelayS == nil || want.DelayS == nil || *got.DelayS != *want.DelayS {
 			t.Errorf("%s: delay %v, GTFS %v", c.name, got.DelayS, want.DelayS)
 		}
+	}
+}
+
+// historyOf runs departApp with a fix history and returns its rows by fix time (columns split).
+func historyOf(t *testing.T, day time.Time, daily *telematics.DailySchedule, fixes []float64) map[int64][]string {
+	t.Helper()
+	dir := t.TempDir()
+	var h *history.Writer
+	departApp(t, day, daily, fixes, func(a *App) {
+		var err error
+		// A clock of its own: departApp moves the App's while the writer runs.
+		at := time.Date(day.Year(), day.Month(), day.Day(), 10, 50, 0, 0, gtfs.Athens)
+		if h, err = history.Open(dir, 1<<30, 24*time.Hour, func() time.Time { return at }, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+			t.Fatal(err)
+		}
+		a.hist = h
+	})
+	h.Close()
+	names, _ := filepath.Glob(filepath.Join(dir, "*.csv"))
+	if len(names) != 1 {
+		t.Fatalf("files %v", names)
+	}
+	b, _ := os.ReadFile(names[0])
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if lines[0]+"\n" != history.Header {
+		t.Fatalf("header %q", lines[0])
+	}
+	rows := map[int64][]string{}
+	for _, l := range lines[1:] {
+		f := strings.Split(l, ",")
+		at, _ := strconv.ParseInt(f[0], 10, 64)
+		rows[at] = f
+	}
+	return rows
+}
+
+// The history keeps the GTFS delay, and adds the run of OASA's daily schedule a bus left on and
+// its start delay (left 10:46 on the 10:45 run: 60 s), for the daily stats (web#32).
+func TestHistoryKeepsTheDailyRunAndItsStartDelay(t *testing.T) {
+	daily := &telematics.DailySchedule{Descr: "WEST - EAST", Go: []string{"10:45", "11:30"}}
+	rows := historyOf(t, expiredMonday, daily, leftAt1046)
+	raw := historyOf(t, expiredMonday, nil, leftAt1046)
+	at := oct12(10, 50)
+	r := rows[at]
+	if len(r) != 13 || r[11] != strconv.FormatInt(oct12(10, 45), 10) || r[12] != "60" || r[10] != raw[at][10] || r[10] == "" {
+		t.Fatalf("row at 10:50 %q (raw %q)", r, raw[at])
+	}
+	for _, m := range []int{44, 46} { // not left yet
+		if r := rows[oct12(10, m)]; len(r) != 13 || r[11] != "" || r[12] != "" {
+			t.Fatalf("row at 10:%d %q", m, r)
+		}
+	}
+	if r := raw[at]; r[11] != "" || r[12] != "" {
+		t.Fatalf("without a daily schedule %q", r)
 	}
 }

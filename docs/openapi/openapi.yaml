@@ -1887,7 +1887,7 @@ paths:
     get:
       tags: [V2]
       operationId: getV2Municipal
-      summary: Municipal bus routes from OpenStreetMap (rev 17)
+      summary: Municipal bus routes from OpenStreetMap (rev 18)
       description: |
         The bus routes that municipalities run (δημοτική συγκοινωνία), which are not in the OASA
         GTFS: OSM route relations whose operator is a «Δήμος», read from the Overpass API at
@@ -2378,6 +2378,36 @@ components:
                     type: [array, "null"]
                     description: GTFS trip_ids never seen, by start time.
                     items: {type: string}
+        start_delay:
+          type: object
+          description: |
+            How late the runs of OASA's daily schedule left their first stop (contract rev 17), for
+            buses seen leaving on a clear run while the static GTFS is expired. A run counts once,
+            for the day of its scheduled departure. Missing when no run of the day was measured.
+          required: [runs, by_line]
+          properties:
+            runs: {type: integer, description: "Runs measured, all lines."}
+            by_line:
+              type: array
+              description: Every line with a measured run, by id.
+              items:
+                type: object
+                required: [line, runs, mean_s, p90_s, sum_s, minutes]
+                properties:
+                  line: {type: string}
+                  runs: {type: integer}
+                  mean_s: {type: integer, description: Mean start delay in seconds (rounded; negative is early).}
+                  p90_s: {type: integer, description: "90th percentile, nearest rank, seconds."}
+                  sum_s: {type: integer, description: Sum of the start delays in seconds (days add up).}
+                  minutes:
+                    type: array
+                    description: "Histogram by minute: [floor(delay / 60), runs] pairs."
+                    items:
+                      type: array
+                      minItems: 2
+                      maxItems: 2
+                      items: {type: integer}
+                    example: [[-1, 1], [1, 1], [3, 1], [10, 1]]
 
     StaticLines:
       type: object
@@ -3425,7 +3455,7 @@ components:
 
     MunicipalRoute:
       type: object
-      description: A municipal bus route of `/v2/municipal` (rev 17), one OSM route relation.
+      description: A municipal bus route of `/v2/municipal` (rev 18), one OSM route relation.
       required: [id, ref, name, municipality, timetable_url, shape, stops]
       properties:
         id:

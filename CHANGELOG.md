@@ -8,6 +8,13 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
 
 ## Unreleased
 
+### Statistics
+- Daily stats files get `start_delay` (contract rev 17): per line, how late the runs of OASA's
+  daily schedule left their first stop (runs measured, mean, p90, and a minute histogram so
+  several days add up). Measured for buses seen leaving on a clear run (#55); days without it
+  are unchanged. The fix history gets two trailing columns for it, `run_start` and
+  `start_delay_s` ([#72](https://github.com/angelospk/athens-transit-rt/issues/72)).
+
 ### Live API
 - `GET /v2/plan` (contract rev 16): a trip planner for the app's evening section. From a point
   to a point, the first `n` options after `after`, or with `last=true` the last `n` of the
@@ -16,7 +23,7 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
   or railway.gov.gr). RAPTOR in process (`internal/plan`), rebuilt for each service day. Every
   leg has a `shape`; every ride's `run` opens with `/v2/runs/{id}`, also after midnight until
   03:00 ([#44](https://github.com/angelospk/athens-transit-rt/issues/44)).
-- `GET /v2/municipal` (contract rev 17): the bus routes that 12 municipalities run, with their
+- `GET /v2/municipal` (contract rev 18): the bus routes that 12 municipalities run, with their
   stops where OpenStreetMap has them and a link to each municipality's timetable page. From
   OpenStreetMap (ODbL) through the Overpass API, weekly; no times, no live data, no OASA request
   ([#59](https://github.com/angelospk/athens-transit-rt/issues/59)).

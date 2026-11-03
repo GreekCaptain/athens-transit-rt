@@ -14,7 +14,7 @@ import (
 	"github.com/angelospk/athens-transit-rt/internal/rail"
 )
 
-// The /v2/municipal layer (contract rev 17): municipal bus routes and stops from OpenStreetMap,
+// The /v2/municipal layer (contract rev 18): municipal bus routes and stops from OpenStreetMap,
 // polled from Overpass at start and then weekly. No OASA request.
 
 const (

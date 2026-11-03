@@ -1,5 +1,5 @@
 // Package municipal reads the municipal bus routes of Attica (δημοτική συγκοινωνία) from
-// OpenStreetMap through the Overpass API, for /v2/municipal (contract rev 17). No municipality
+// OpenStreetMap through the Overpass API, for /v2/municipal (contract rev 18). No municipality
 // publishes a feed; OSM (ODbL) has the route shapes for 12 municipalities and stops for most
 // of them. There are no timetables: each route links to its municipality's own page.
 package municipal

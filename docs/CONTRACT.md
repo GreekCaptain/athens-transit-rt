@@ -14,9 +14,12 @@ Source of truth: `athens-transit-rt/docs/CONTRACT.md`. The frontend keeps a copy
   frontend repo by whoever made it (backend thread opens the copy as a commit or
   issue on the frontend repo).
 
-Revision: 17 (2026-11-04): `GET /v2/municipal`, the municipal bus routes and stops of OpenStreetMap
-(rev 16 (2026-11-03, PR #64): `GET /v2/plan`, trips from a point to a
-point with walks and transfers ([§9](#9-trip-planner-v2plan-rev-16));
+Revision: 18 (2026-11-04): `GET /v2/municipal`, the municipal bus routes and stops of OpenStreetMap
+(rev 17: the daily statistics files (`/v1/stats/days/{date}`, the `stats`
+branch) get `start_delay`, how late each line's runs of OASA's daily schedule left their first
+stop ([API.md](API.md#start-delays-start_delay)); days without it are as before;
+rev 16: `GET /v2/plan`, trips from a point to a point with walks and transfers
+([§9](#9-trip-planner-v2plan-rev-16));
 rev 15: OASA Patterns and bus Vehicles get both directions, 0 and 1 (the
 GTFS has no `direction_id`, so all were 0); metro M2 `headsign` is where the train goes, not
 where it starts; rev 14: on an expired GTFS, `delay_s` (and a stop board's `scheduled`) of a
@@ -652,7 +655,7 @@ All: UTF-8 JSON, `Access-Control-Allow-Origin: *`, gzip, times in Unix seconds, 
 | `GET /v2/runs/{id}` | `{run: Run, sources}` | 15 | none |
 | `GET /v2/alerts` (rev 13) | `{alerts: [Alert], updated_at}` | 300 | none (polled in the background) |
 | `GET /v2/plan?from=&to=&after=&last=&n=` (rev 16) | `{service_day, …, itineraries: [Itinerary], walk_only, lines, stops, sources}` ([§9](#9-trip-planner-v2plan-rev-16)) | 60 | none (reads only what is already loaded) |
-| `GET /v2/municipal` (rev 17) | `{routes: [MunicipalRoute], stops: {id: MunicipalStop}, updated_at, attribution}` | 86400 | none (OpenStreetMap, polled weekly) |
+| `GET /v2/municipal` (rev 18) | `{routes: [MunicipalRoute], stops: {id: MunicipalStop}, updated_at, attribution}` | 86400 | none (OpenStreetMap, polled weekly) |
 
 Shapes not shown above:
 
@@ -682,7 +685,7 @@ Shapes not shown above:
 ```
 
 ```json
-// MunicipalRoute (rev 17): one route relation of OpenStreetMap, one direction or a loop
+// MunicipalRoute (rev 18): one route relation of OpenStreetMap, one direction or a loop
 {"id": "osm:r20462642", "ref": "Β1", "name": "Δημοτικό Λεωφορείο Β1: Πολύδροσο → Κοιμητήριο",
  "municipality": "Δήμος Χαλανδρίου",
  "timetable_url": "https://www.chalandri.gr/yphresies/ypodomes-erga/dimotiki-sygkoinonia/",
@@ -693,7 +696,7 @@ Shapes not shown above:
 
 Rules:
 
-- `/v2/municipal` (rev 17): the bus routes that municipalities run (δημοτική συγκοινωνία), from
+- `/v2/municipal` (rev 18): the bus routes that municipalities run (δημοτική συγκοινωνία), from
   OpenStreetMap through the Overpass API: at start, then every 7 days (every hour after a
   failure). No OASA request. About 37 routes of 12 municipalities, ~50 KB gzip. **No timetable,
   no live data**: clients show the route, its stops and a link to `timetable_url`.
