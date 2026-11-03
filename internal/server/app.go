@@ -79,8 +79,9 @@ type lineData struct {
 	feed     *gtfs.Feed
 	results  []match.Result
 	vehicles []Vehicle
-	board    []boardPos // per result, for the stop boards
-	daily    []int64    // per result, its run's shift to OASA's daily schedule (dailyShifts); nil: none
+	board    []boardPos    // per result, for the stop boards
+	daily    []int64       // per result, its run's shift to OASA's daily schedule (dailyShifts); nil: none
+	dirs     map[int32]int // shape -> direction (0/1) on feed, kept so a feed swap does not lose it
 }
 
 type App struct {
@@ -379,7 +380,8 @@ func (a *App) onLine(p sched.LinePoll) {
 	if p.Failed == p.Routes {
 		return // keep the previous data; nothing new is known
 	}
-	a.lines[p.Line] = &lineData{updated: p.Done, feed: w.feed, results: results, vehicles: vehicles, board: board, daily: daily}
+	a.lines[p.Line] = &lineData{updated: p.Done, feed: w.feed, results: results, vehicles: vehicles, board: board, daily: daily,
+		dirs: w.shapeDirs(p.Line)}
 	a.lastPublish, a.lastOK = p.Done, p.Done
 }
 

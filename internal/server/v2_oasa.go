@@ -384,13 +384,9 @@ func (o *oasaAdapter) LineVehicles(id string, now time.Time) (*LineVehicles, err
 	warming, d := a.warming[line], a.lines[line]
 	mode := w.lineModes()[line]
 	conv := func() []model.Vehicle {
-		var dirs map[int32]int
-		if d.feed == w.feed {
-			dirs = w.shapeDirs(line)
-		}
 		out := make([]model.Vehicle, len(d.vehicles))
 		for i := range d.vehicles {
-			out[i] = vehicleV2(d.feed, dirs, mode, line, &d.results[i], &d.vehicles[i], d.board[i])
+			out[i] = vehicleV2(d.feed, d.dirs, mode, line, &d.results[i], &d.vehicles[i], d.board[i])
 		}
 		return out
 	}
@@ -436,7 +432,7 @@ func (o *oasaAdapter) Vehicles(now time.Time) ([]model.Vehicle, error) {
 			if now.Unix()-v.PositionAt > int64(vehicleMaxAge/time.Second) {
 				continue
 			}
-			mv := vehicleV2(d.feed, w.shapeDirs(id), modes[id], id, &d.results[i], v, d.board[i])
+			mv := vehicleV2(d.feed, d.dirs, modes[id], id, &d.results[i], v, d.board[i])
 			mv.Position.Lat, mv.Position.Lon = round5(v.Lat), round5(v.Lon)
 			if j, ok := at[v.ID]; !ok {
 				at[v.ID] = len(out)
