@@ -17,6 +17,9 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
   some variants to other weekdays since the 2026-07-08 feed (309Β runs 5863 on Tuesdays too):
   on 2026-11-03, 30 of 48 unmatched buses had this cause. The local `/metrics` now counts
   vehicles and unmatched vehicles per line ([#51](https://github.com/angelospk/athens-transit-rt/issues/51)).
+  The minute `stats` log line also names the lines whose buses all lack a trip
+  (`unmatched_lines=054,309Β`), so such a line shows up in the log without anyone spotting it
+  on the map ([#51](https://github.com/angelospk/athens-transit-rt/issues/51)).
 - Bus delays against OASA's daily schedule while the GTFS is expired (contract rev 14): a bus seen leaving on a
   daily run is late or early against that run, not against the old GTFS trip (`/v1/lines`, stop
   boards, `/v2` Vehicles and Runs). Buses not seen leaving, or whose run is unclear, keep the GTFS
