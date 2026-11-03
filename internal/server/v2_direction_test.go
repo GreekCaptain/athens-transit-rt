@@ -13,7 +13,8 @@ import (
 // twoWayFeed is line "40" (ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ) as OASA publishes it: no direction_id (every trip
 // 0), each way on its own side of the road (own stop ids), the way back the busiest shape.
 // GO runs Πειραιάς -> Σύνταγμα, NIGHT the same way at night, BACK the other way, SHORT turns back
-// halfway. Line "50" is a loop with one shape.
+// halfway, GOSHORT runs the second half of GO. Line "50" is a loop with one shape whose
+// headsign names the first place of the line name: a loop is 0 all the same.
 func twoWayFeed(t *testing.T) *gtfs.Feed {
 	t.Helper()
 	var stops, shapes, trips, st strings.Builder
@@ -21,9 +22,11 @@ func twoWayFeed(t *testing.T) *gtfs.Feed {
 	shapes.WriteString("shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\n")
 	trips.WriteString("route_id,service_id,trip_id,trip_headsign,direction_id,shape_id\n")
 	st.WriteString("trip_id,arrival_time,departure_time,stop_id,stop_sequence\n")
+	// Σ lies off the Π-Μ axis, so the ends of a half trip do not tie by chance.
 	lon := map[string]float64{"P": 23.60, "M": 23.65, "S": 23.70}
+	lat := map[string]float64{"P": 37.98, "M": 37.98, "S": 38.03}
 	for _, s := range []string{"P", "M", "S"} {
-		fmt.Fprintf(&stops, "%s,%s,37.980,%.2f\n%s2,%s,37.981,%.2f\n", s, s, lon[s], s, s, lon[s])
+		fmt.Fprintf(&stops, "%s,%s,%.3f,%.2f\n%s2,%s,%.3f,%.2f\n", s, s, lat[s], lon[s], s, s, lat[s]+0.001, lon[s])
 	}
 	stops.WriteString("L1,L1,38.000,23.60\nL2,L2,38.010,23.62\n")
 	shape := func(id string, ids ...string) {
@@ -35,6 +38,7 @@ func twoWayFeed(t *testing.T) *gtfs.Feed {
 	shape("NIGHT", "P", "M", "S")
 	shape("BACK", "S2", "M2", "P2")
 	shape("SHORT", "M2", "P2")
+	shape("GOSHORT", "M", "S")
 	shapes.WriteString("LOOP,38.000,23.60,1\nLOOP,38.010,23.62,2\nLOOP,38.000,23.60,3\n")
 	n := 0
 	trip := func(route, shape, head string, count int, ids ...string) {
@@ -47,17 +51,21 @@ func twoWayFeed(t *testing.T) *gtfs.Feed {
 			}
 		}
 	}
+	// The first BACK trip runs only its second half: the ends of a shape come from its most
+	// common stop pattern, else GOSHORT (Μ -> Σ) ties with it and joins the wrong way.
+	trip("RX", "BACK", "ΣΥΝΤΑΓΜΑ - ΠΕΙΡΑΙΑΣ", 1, "M2", "P2")
 	trip("RX", "BACK", "ΣΥΝΤΑΓΜΑ - ΠΕΙΡΑΙΑΣ", 4, "S2", "M2", "P2")
+	trip("RX", "GOSHORT", "ΣΥΝΤΑΓΜΑ", 1, "M", "S")
 	trip("RX", "GO", "ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ", 3, "P", "M", "S")
 	trip("RX", "NIGHT", "ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ (22:00-06:00)", 1, "P", "M", "S")
 	trip("RX", "SHORT", "ΠΕΙΡΑΙΑΣ", 1, "M2", "P2")
-	trip("RY", "LOOP", "ΤΟΠΙΚΗ", 2, "L1", "L2", "L1")
+	trip("RY", "LOOP", "ΛΑ", 2, "L1", "L2", "L1")
 	f, err := gtfs.LoadZip(gtfstest.Zip(t, map[string]string{
 		"stops.txt":  stops.String(),
 		"shapes.txt": shapes.String(),
 		"trips.txt":  trips.String(),
 		"routes.txt": "route_id,route_short_name,route_long_name,route_type\n" +
-			"RX,40,ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ,3\nRY,50,ΤΟΠΙΚΗ (ΚΥΚΛΙΚΗ),3\n",
+			"RX,40,ΠΕΙΡΑΙΑΣ - ΣΥΝΤΑΓΜΑ,3\nRY,50,ΛΑ - ΛΒ (ΚΥΚΛΙΚΗ),3\n",
 		"stop_times.txt": st.String(),
 		"calendar.txt": "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n" +
 			"day_1,1,0,0,0,0,0,0,20260706,20261006\n",
@@ -77,7 +85,7 @@ func TestV2OASAPatternDirections(t *testing.T) {
 	a := oasaOnly(newApp(t, monday1020))
 	a.SetFeed(twoWayFeed(t), nil)
 	for line, want := range map[string]map[string]int{
-		"40": {"oasa:GO": 0, "oasa:NIGHT": 0, "oasa:BACK": 1, "oasa:SHORT": 1},
+		"40": {"oasa:GO": 0, "oasa:GOSHORT": 0, "oasa:NIGHT": 0, "oasa:BACK": 1, "oasa:SHORT": 1},
 		"50": {"oasa:LOOP": 0},
 	} {
 		var d v2LineDetail

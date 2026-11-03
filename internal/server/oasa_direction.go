@@ -35,25 +35,34 @@ func (w *world) shapeDirs(line string) map[int32]int {
 // The reference then takes the group that heads to the place after the last " - " of the line
 // name, which is the direction /v1's daily schedule calls 0 ("Go"); the other group is 1. A
 // headsign naming both places or neither does not vote, and a name without " - " cannot tell
-// the groups apart, so the reference stays 0.
+// the groups apart, so the reference stays 0. A line whose shapes all run one way is 0.
 func oasaDirections(f *gtfs.Feed, line, name string) map[int32]int {
 	trips := map[int32]int{}
-	ends := map[int32]shapeEnds{}
+	pats := map[int32]map[int32]int{} // shape -> pattern -> trips
 	for _, ti := range f.TripsForLine(line) {
 		t := f.Trip(ti)
-		if t.Shape < 0 {
+		if t.Shape < 0 || len(f.Patterns[t.Pattern].Stops) == 0 {
 			continue
 		}
 		trips[t.Shape]++
-		if _, ok := ends[t.Shape]; ok {
-			continue // the first trip's pattern names the ends of the shape
+		if pats[t.Shape] == nil {
+			pats[t.Shape] = map[int32]int{}
 		}
-		stops := f.Patterns[t.Pattern].Stops
-		if len(stops) == 0 {
-			continue
+		pats[t.Shape][t.Pattern]++
+	}
+	// The most common stop pattern names the ends of a shape (as staticsite.LineFileOf): a trip
+	// that runs only part of it must not move them.
+	ends := map[int32]shapeEnds{}
+	for s, byPat := range pats {
+		best, most := int32(-1), 0
+		for p, n := range byPat {
+			if n > most || n == most && p < best {
+				best, most = p, n
+			}
 		}
+		stops := f.Patterns[best].Stops
 		first, last := f.Stops[stops[0]], f.Stops[stops[len(stops)-1]]
-		ends[t.Shape] = shapeEnds{first: geo.XY(first.Lat, first.Lon), last: geo.XY(last.Lat, last.Lon)}
+		ends[s] = shapeEnds{first: geo.XY(first.Lat, first.Lon), last: geo.XY(last.Lat, last.Lon)}
 	}
 	ref, most := int32(-1), 0
 	for s := range ends {
@@ -89,8 +98,12 @@ func oasaDirections(f *gtfs.Feed, line, name string) map[int32]int {
 			}
 		}
 	}
+	oneWay := true
+	for _, v := range same {
+		oneWay = oneWay && v
+	}
 	sameDir := 0
-	if vote < 0 {
+	if vote < 0 && !oneWay { // a line with one way (a loop) is 0 whatever its headsigns say
 		sameDir = 1
 	}
 	out := make(map[int32]int, len(ends))
