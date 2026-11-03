@@ -198,7 +198,7 @@ func (v Vehicle) Lite() LiteVehicle {
 	return LiteVehicle{v.ID, v.Line, v.Run, v.Mode, v.Headsign, v.Label, v.Position, v.DelayS, v.NextStop, v.AtTerminus, v.Direction, v.Source}
 }
 
-// Usual (rev 18) is the usual service of a Line and headsign at a Stop, learnt from the passes
+// Usual (rev 19) is the usual service of a Line and headsign at a Stop, learnt from the passes
 // of the past weeks (map#24): how often a bus usually passes in this local hour, and, only when
 // the past weeks agree and today's timetable has a run near it, when the next one usually
 // passes.

@@ -13,25 +13,26 @@ import (
 // schedule its bus left on starts after the GTFS trip it was matched to (0: unknown). Only on an
 // expired GTFS, and only for a bus seen leaving whose run is clear (plannedOf); the delay shown is
 // then against that run, the GTFS trip giving the times between stops. nil when none is known.
-// The raw match (GTFS-RT, the history) keeps the GTFS delay.
-func (a *App) dailyShifts(f *gtfs.Feed, line string, results []match.Result, now time.Time) []int64 {
+// The raw match (GTFS-RT, the history) keeps the GTFS delay. runs says, for the same results, the
+// run each bus left on and how late it left (also when the shift is 0); nil when none is known.
+func (a *App) dailyShifts(f *gtfs.Feed, line string, results []match.Result, now time.Time) (shifts []int64, runs []leftRun) {
 	if !expired(f, now) {
-		return nil
+		return nil, nil
 	}
 	today := gtfs.Midnight(now)
 	e, ok := a.dailyEntryOf(line, today)
 	if !ok || e.partial { // a line code failed: its runs may be missing, and a bus paired with another
-		return nil
+		return nil, nil
 	}
 	d := e.d
 	resp := dailyToSchedule(line, today.Format(time.DateOnly), d)
 	shapes := lineShapes(f, line)
 	loop := d.Circular || len(shapes) == 1 && len(resp.Directions) == 1
-	type runs struct {
+	type dirRuns struct {
 		starts, times []time.Time
 		took          []int
 	}
-	dirs := make([]runs, len(resp.Directions))
+	dirs := make([]dirRuns, len(resp.Directions))
 	dirOf := map[int32]int{} // shape -> its direction; -1 when more than one
 	for i, dir := range resp.Directions {
 		var starts []time.Time
@@ -46,9 +47,8 @@ func (a *App) dailyShifts(f *gtfs.Feed, line string, results []match.Result, now
 		}
 		sort.Slice(starts, func(i, j int) bool { return starts[i].Before(starts[j]) })
 		times, took := pairStarts(dir.Departures, today, starts, now)
-		dirs[i] = runs{starts, times, took}
+		dirs[i] = dirRuns{starts, times, took}
 	}
-	var out []int64
 	for i := range results {
 		r := &results[i]
 		if !r.Matched() || r.Waiting {
@@ -69,15 +69,29 @@ func (a *App) dailyShifts(f *gtfs.Feed, line string, results []match.Result, now
 			continue
 		}
 		shift := int64(run.Sub(r.Day.Add(time.Duration(f.Start(t))*time.Second)) / time.Second)
-		if dl := int64(r.Delay) - shift; shift == 0 || dl < match.MinDelay || dl > match.MaxDelay {
+		if dl := int64(r.Delay) - shift; dl < match.MinDelay || dl > match.MaxDelay {
 			continue
 		}
-		if out == nil {
-			out = make([]int64, len(results))
+		if runs == nil {
+			runs = make([]leftRun, len(results))
 		}
-		out[i] = shift
+		runs[i] = leftRun{start: run, late: int(left.Sub(run) / time.Second)}
+		if shift == 0 {
+			continue
+		}
+		if shifts == nil {
+			shifts = make([]int64, len(results))
+		}
+		shifts[i] = shift
 	}
-	return out
+	return shifts, runs
+}
+
+// leftRun is the run of OASA's daily schedule a bus left on (zero when not known) and how many
+// seconds after its departure it left.
+type leftRun struct {
+	start time.Time
+	late  int
 }
 
 // onlyStart is the index of the start at t, -1 when there is none or more than one (two buses

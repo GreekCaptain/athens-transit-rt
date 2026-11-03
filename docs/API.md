@@ -175,6 +175,7 @@ Full field rules: [`CONTRACT.md`](CONTRACT.md#unified-api-v2-rev-8); terms:
 | `GET /v2/runs/{id}` | one Run (a trip of one day) with every stop and its time | 15 s |
 | `GET /v2/alerts` | service disruptions (rev 13): OASA notices and strikes | 5 min |
 | `GET /v2/plan` | trips from a point to a point with transfers, from the timetables (rev 16) | 1 min |
+| `GET /v2/municipal` | municipal bus routes and stops from OpenStreetMap (rev 18), no times | 1 day |
 
 - **Ids** are `<source>:<native>` and must be percent-encoded in a URL: `oasa:040`,
   `stasy:M2`, `stasy:συνταγμα-metro`, `proastiakos:KIATO`,
@@ -246,6 +247,22 @@ example: [`fixtures/v2/plan.json`](fixtures/v2/plan.json).
 curl -s "https://transit.haroldpoi.dev/v2/plan?from=37.9753,23.7355&to=37.8739,23.7540&last=true&after=$(date -d 23:30 +%s)" \
   | jq -r '.itineraries[] | [(.depart_at|localtime|strftime("%H:%M")), (.arrive_at|localtime|strftime("%H:%M")),
       ([.legs[] | select(.kind=="ride") | .line] | join(" → "))] | @tsv'
+```
+
+### Municipal buses (`/v2/municipal`)
+
+`GET /v2/municipal` lists the bus routes that municipalities run (δημοτική συγκοινωνία), which
+OASA does not have: about 37 routes of 12 municipalities, from OpenStreetMap (ODbL), refreshed
+weekly from the Overpass API. Each route has its `shape` (lines of `[lat, lon]`), its `stops`
+(`osm:n<id>`, `[]` when OSM has none), its `municipality` and `timetable_url`, the
+municipality's own page. There are no times and no live positions. Show `attribution`
+(«© OpenStreetMap contributors (ODbL)») with the layer. Before the first poll after a start the
+lists are empty and `updated_at` is `null`.
+
+```bash
+# Every municipal route, with its timetable page
+curl -s --compressed https://transit.haroldpoi.dev/v2/municipal \
+  | jq -r '.routes[] | [.municipality, .ref, .name, (.stops|length), .timetable_url] | @tsv'
 ```
 
 ## OASA's predictions at a stop
@@ -422,6 +439,7 @@ the earlier files, but `index.json` and `latest.json` skip them):
 | `hours[h]` | 24 entries by local hour: `fixes`, `vehicles`, `lines`, `dist_m`, `time_s` |
 | `by_line[]` | every line with a fix: `line`, `fixes`, `vehicles`, `dist_m`, `time_s` |
 | `trips` | scheduled trips of the day and how many ran (below); missing when the server had no static GTFS of the day's history |
+| `start_delay` | how late the runs of OASA's daily schedule left (below); missing when no run of the day was measured (every day before the field shipped) |
 
 Speed in km/h = `dist_m / time_s * 3.6`; `time_s` 0 means no speed. Sums, not averages, so
 several days add up exactly. A speed sample is two consecutive fixes of one vehicle on the
@@ -456,6 +474,29 @@ working telematics looks like a missed trip (`missed` is an upper bound of cance
 outage of the server (an hour with few `fixes` in `hours[]`) makes its trips missed; with an
 expired feed, a line or trip the old timetable has but OASA no longer runs counts as missed. Rows of
 another GTFS version are ignored; when they are most of the day's rows, `trips` is left out.
+
+### Start delays (`start_delay`)
+
+```json
+"start_delay": {"runs": 6, "by_line": [
+  {"line": "040", "runs": 4, "mean_s": 203, "p90_s": 600, "sum_s": 810, "minutes": [[-1, 1], [1, 1], [3, 1], [10, 1]]}
+]}
+```
+
+| Field | Meaning |
+|---|---|
+| `runs` | runs measured that day, all lines |
+| `by_line[]` | every line with a measured run, by id: `line`, `runs`, `mean_s` (rounded), `p90_s` (nearest rank: the smallest delay that 90% of the runs did not exceed), `sum_s`, `minutes` |
+| `minutes` | histogram: `[minute, runs]` pairs by minute, minute = floor(delay / 60) (`-1` is 1-60 s early). Add the pairs of several days and read a p90 of the period from them (to the minute) |
+
+A run counts when the server saw its bus leave the first stop on a run of OASA's daily schedule
+that is clear (no free run nearer to that departure; the same rule as `delay_s`, contract rev 14)
+and the bus then matched the line. Its start delay is the time it left minus the run's scheduled
+departure (negative: early), as precise as the polling of the line (about 30 s on a watched line, up to 150 s otherwise). A run counts once (line, vehicle and departure), for the day of its
+scheduled departure. Only while the static GTFS is expired (the server pairs buses with daily
+runs only then). Runs whose departure was not seen (the bus appeared on its way), lines whose daily
+schedule did not load, and short-headway runs that two buses could have taken are not measured,
+so `runs` is a sample, not every run.
 
 ## GTFS-Realtime details
 

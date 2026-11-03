@@ -14,7 +14,6 @@ import (
 
 	"github.com/angelospk/athens-transit-rt/internal/gtfs"
 	"github.com/angelospk/athens-transit-rt/internal/gtfs/gtfstest"
-	"github.com/angelospk/athens-transit-rt/internal/history"
 )
 
 // trow is one matched history row of trip (vehicle "v"+trip) at sm metres along its shape.
@@ -29,7 +28,7 @@ func writeRows(t *testing.T, dir string, hour time.Time, rows ...string) {
 		t.Fatal(err)
 	}
 	zw := gzip.NewWriter(out)
-	zw.Write([]byte(history.Header + strings.Join(rows, "")))
+	zw.Write([]byte(oldHeader + strings.Join(rows, "")))
 	zw.Close()
 	out.Close()
 }

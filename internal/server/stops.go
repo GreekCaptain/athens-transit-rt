@@ -63,7 +63,7 @@ type StopResponse struct {
 	Stop      StopInfo      `json:"stop"`
 	Lines     []string      `json:"lines"`
 	Arrivals  []StopArrival `json:"arrivals"`
-	Usual     []model.Usual `json:"usual"` // rev 18
+	Usual     []model.Usual `json:"usual"` // rev 19
 	UpdatedAt int64         `json:"updated_at"`
 }
 

@@ -14,11 +14,14 @@ Source of truth: `athens-transit-rt/docs/CONTRACT.md`. The frontend keeps a copy
   frontend repo by whoever made it (backend thread opens the copy as a commit or
   issue on the frontend repo).
 
-Revision: 18 (2026-11-04): `/v2/stops/{id}` and `/v1/stops/{stop_id}` get `usual`, the usual
+Revision: 19 (2026-11-04): `/v2/stops/{id}` and `/v1/stops/{stop_id}` get `usual`, the usual
 service of each OASA line and headsign at the stop, learnt from the past weeks
-(rev 17 is taken by an open PR (#73 `start_delay`); whichever merges last renumbers;
-rev 16 (2026-11-03, PR #64): `GET /v2/plan`, trips from a point to a
-point with walks and transfers ([§9](#9-trip-planner-v2plan-rev-16));
+(rev 18: `GET /v2/municipal`, the municipal bus routes and stops of OpenStreetMap;
+rev 17: the daily statistics files (`/v1/stats/days/{date}`, the `stats`
+branch) get `start_delay`, how late each line's runs of OASA's daily schedule left their first
+stop ([API.md](API.md#start-delays-start_delay)); days without it are as before;
+rev 16: `GET /v2/plan`, trips from a point to a point with walks and transfers
+([§9](#9-trip-planner-v2plan-rev-16));
 rev 15: OASA Patterns and bus Vehicles get both directions, 0 and 1 (the
 GTFS has no `direction_id`, so all were 0); metro M2 `headsign` is where the train goes, not
 where it starts; rev 14: on an expired GTFS, `delay_s` (and a stop board's `scheduled`) of a
@@ -302,8 +305,8 @@ the others keep their usual rate. `stop_id` is the GTFS `stop_id`, as in
   OASA's any more. A client that shows only buses filters on `source`.
 - Up to 60 min ahead, sorted by `at`, at most 3 rows per `line` and `variant`. `arrivals` may
   be `[]`.
-- `usual` (rev 18): the usual service of each line and headsign at the stop, as
-  [`/v2` Usual](#usual-rev-18-v2stopsid) but with `line` as in `arrivals` (`"608"`). The guard
+- `usual` (rev 19): the usual service of each line and headsign at the stop, as
+  [`/v2` Usual](#usual-rev-19-v2stopsid) but with `line` as in `arrivals` (`"608"`). The guard
   of `next_at` uses today's timetable (OASA's daily schedule while the GTFS is expired) even
   when `arrivals` has no `schedule` rows. `[]` while the server has no history.
 - Headers: `Cache-Control: public, max-age=15`. Refetch every 15-30 s while shown.
@@ -613,7 +616,7 @@ and compare them; they never parse them.
 - `platform`: `null` unless the Source gives one (only railway.gov.gr today).
 - `status`: `scheduled` | `running` | `delayed`. Cancelled Runs are left out, as today.
 
-#### Usual (rev 18, `/v2/stops/{id}`)
+#### Usual (rev 19, `/v2/stops/{id}`)
 
 (`/v1/stops/{stop_id}` has the same rows, `line` without `oasa:`.)
 
@@ -683,7 +686,7 @@ All: UTF-8 JSON, `Access-Control-Allow-Origin: *`, gzip, times in Unix seconds, 
 | `GET /v2/lines/{id}` | `{line: Line, patterns: [Pattern], stops: {id: Stop}, sources}` | 3600 | none |
 | `GET /v2/lines/{id}/vehicles` | `{line, updated_at, next_update_at, vehicles: [Vehicle], sources}` | until `next_update_at`, 5-300 | `oasa`: marks the line watched (as `/v1/lines/{id}`); `proastiakos`: opens the stream |
 | `GET /v2/stops` | `{stops: [StopIndexEntry], sources}` every Stop of every mode | 3600 | none |
-| `GET /v2/stops/{id}` | `{stop: Stop, lines: [Line], arrivals: [Arrival], usual: [Usual] (rev 18), updated_at, sources}` | 15 | `oasa`: raises its lines' priority; `proastiakos`: opens the stream |
+| `GET /v2/stops/{id}` | `{stop: Stop, lines: [Line], arrivals: [Arrival], usual: [Usual] (rev 19), updated_at, sources}` | 15 | `oasa`: raises its lines' priority; `proastiakos`: opens the stream |
 | `GET /v2/vehicles` | `{updated_at, next_update_at, vehicles: [Vehicle], sources}` bus + trolley | until `next_update_at`, 5-30 | none |
 | `GET /v2/vehicles/tiles/{z}/{x}/{y}` | as `/v2/vehicles`, tile-cut as rev 5 | as above | none |
 | `GET /v2/vehicles/rail` | as `/v2/vehicles`, metro + tram (~60 vehicles, one body) | until `next_update_at`, 5-30 | none |
@@ -691,6 +694,7 @@ All: UTF-8 JSON, `Access-Control-Allow-Origin: *`, gzip, times in Unix seconds, 
 | `GET /v2/runs/{id}` | `{run: Run, sources}` | 15 | none |
 | `GET /v2/alerts` (rev 13) | `{alerts: [Alert], updated_at}` | 300 | none (polled in the background) |
 | `GET /v2/plan?from=&to=&after=&last=&n=` (rev 16) | `{service_day, …, itineraries: [Itinerary], walk_only, lines, stops, sources}` ([§9](#9-trip-planner-v2plan-rev-16)) | 60 | none (reads only what is already loaded) |
+| `GET /v2/municipal` (rev 18) | `{routes: [MunicipalRoute], stops: {id: MunicipalStop}, updated_at, attribution}` | 86400 | none (OpenStreetMap, polled weekly) |
 
 Shapes not shown above:
 
@@ -719,8 +723,38 @@ Shapes not shown above:
  "modes": ["bus"], "lines": ["oasa:112"], "stops": ["oasa:40054"], "urgent": false}
 ```
 
+```json
+// MunicipalRoute (rev 18): one route relation of OpenStreetMap, one direction or a loop
+{"id": "osm:r20462642", "ref": "Β1", "name": "Δημοτικό Λεωφορείο Β1: Πολύδροσο → Κοιμητήριο",
+ "municipality": "Δήμος Χαλανδρίου",
+ "timetable_url": "https://www.chalandri.gr/yphresies/ypodomes-erga/dimotiki-sygkoinonia/",
+ "shape": [[[38.02, 23.80], [38.03, 23.81]]], "stops": ["osm:n201", "osm:n203"]}
+// MunicipalStop
+{"name": "Πολύδροσο", "lat": 38.02, "lon": 23.80}
+```
+
 Rules:
 
+- `/v2/municipal` (rev 18): the bus routes that municipalities run (δημοτική συγκοινωνία), from
+  OpenStreetMap through the Overpass API: at start, then every 7 days (every hour after a
+  failure). No OASA request. About 37 routes of 12 municipalities, ~50 KB gzip. **No timetable,
+  no live data**: clients show the route, its stops and a link to `timetable_url`.
+  - A route is an OSM bus or minibus route relation in Attica whose `operator` starts with
+    «Δήμος» or whose `network` says «Δημοτική». `shape`: its ways as lines of `[lat, lon]`
+    (5 decimals); a way that continues the last line is joined to it, so a route has one line or
+    a few. A route with no way is left out.
+  - `ref`: the line's short name, `null` when OSM has none. `municipality`: the operator with
+    its spaces normalised («Δήμος Παπάγου-Χολαργού»). `timetable_url`: that municipality's page
+    (timetable, PDF or notices), `null` for a municipality the backend does not know.
+  - `stops`: Stop ids (`osm:n<node id>`) in route order (a stop visited twice, such as the
+    start and end of a loop, is listed twice), the members with a `stop` role, or the
+    platforms when the route has none; `[]` when OSM has neither (10 routes today). `stops`
+    (the map) holds every listed Stop; `name` is `null` when OSM has none.
+  - Order: by `municipality`, then `ref`, then `name`. A failed poll keeps the last data.
+    Before the first good poll: `routes: []`, `stops: {}`, `updated_at: null`, `max-age=5`,
+    no `ETag`; clients then show nothing. After it: `max-age=86400` with an `ETag`.
+  - Licence: ODbL. Clients show `attribution` («© OpenStreetMap contributors (ODbL)») wherever
+    they show the layer.
 - `/v2/alerts` (rev 13): service disruptions from two sources, polled every 10 min.
   - `source: "oasa"`: the OASA news feed (`oasa.gr/feed`), every item except tenders
     (category «Διαγωνισμοί»). Buses and trolleys only. `lines`: the line codes that follow

@@ -120,6 +120,7 @@ func (a *App) routeV2(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v2/runs/{id}", a.handleV2Run)
 	mux.HandleFunc("GET /v2/alerts", a.handleV2Alerts)
 	mux.HandleFunc("GET /v2/plan", a.handleV2Plan)
+	mux.HandleFunc("GET /v2/municipal", a.handleV2Municipal)
 }
 
 // writeV2 writes a /v2 body: a response with a Source warming up or down is cached at most 5 s

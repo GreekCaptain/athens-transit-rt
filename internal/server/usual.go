@@ -21,7 +21,7 @@ const (
 	usualGuardS = 15 * 60
 )
 
-// usualPasses keeps the stop passes of the past days (contract rev 18 `usual`, map#24): at
+// usualPasses keeps the stop passes of the past days (contract rev 19 `usual`, map#24): at
 // start, then hourly, it builds each finished day of history that has no day file yet (one
 // read of 25-30 archives per day, no OASA call) and drops the days older than
 // usual.TrainDays.

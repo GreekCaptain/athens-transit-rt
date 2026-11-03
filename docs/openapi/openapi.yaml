@@ -1884,6 +1884,50 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
+  /v2/municipal:
+    get:
+      tags: [V2]
+      operationId: getV2Municipal
+      summary: Municipal bus routes from OpenStreetMap (rev 18)
+      description: |
+        The bus routes that municipalities run (δημοτική συγκοινωνία), which are not in the OASA
+        GTFS: OSM route relations whose operator is a «Δήμος», read from the Overpass API at
+        start and then every 7 days (hourly after a failure). No timetable and no live data:
+        clients link `timetable_url`, the municipality's own page. Data © OpenStreetMap
+        contributors, ODbL: show `attribution` with the layer.
+
+        After the first good poll: `Cache-Control: public, max-age=86400` and an `ETag`
+        (`If-None-Match` → `304`). Before it: `routes: []`, `stops: {}`, `updated_at: null`,
+        `max-age=5` and no `ETag`. No `sources`.
+      responses:
+        "200":
+          description: Every municipal route and its stops.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheControl"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MunicipalResponse"
+              example:
+                routes:
+                  - id: "osm:r20462642"
+                    ref: Β1
+                    name: "Δημοτικό Λεωφορείο Β1: Πολύδροσο → Κοιμητήριο"
+                    municipality: Δήμος Χαλανδρίου
+                    timetable_url: "https://www.chalandri.gr/yphresies/ypodomes-erga/dimotiki-sygkoinonia/"
+                    shape: [[[38.02, 23.8], [38.03, 23.81]]]
+                    stops: ["osm:n201", "osm:n203"]
+                stops:
+                  "osm:n201": {name: Πολύδροσο, lat: 38.02, lon: 23.8}
+                  "osm:n203": {name: Κοιμητήριο, lat: 38.03, lon: 23.81}
+                updated_at: 1793793600
+                attribution: © OpenStreetMap contributors (ODbL)
+        "304":
+          description: Not modified (`If-None-Match` matched the `ETag`).
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
 components:
   parameters:
     LineId:
@@ -2335,6 +2379,36 @@ components:
                     type: [array, "null"]
                     description: GTFS trip_ids never seen, by start time.
                     items: {type: string}
+        start_delay:
+          type: object
+          description: |
+            How late the runs of OASA's daily schedule left their first stop (contract rev 17), for
+            buses seen leaving on a clear run while the static GTFS is expired. A run counts once,
+            for the day of its scheduled departure. Missing when no run of the day was measured.
+          required: [runs, by_line]
+          properties:
+            runs: {type: integer, description: "Runs measured, all lines."}
+            by_line:
+              type: array
+              description: Every line with a measured run, by id.
+              items:
+                type: object
+                required: [line, runs, mean_s, p90_s, sum_s, minutes]
+                properties:
+                  line: {type: string}
+                  runs: {type: integer}
+                  mean_s: {type: integer, description: Mean start delay in seconds (rounded; negative is early).}
+                  p90_s: {type: integer, description: "90th percentile, nearest rank, seconds."}
+                  sum_s: {type: integer, description: Sum of the start delays in seconds (days add up).}
+                  minutes:
+                    type: array
+                    description: "Histogram by minute: [floor(delay / 60), runs] pairs."
+                    items:
+                      type: array
+                      minItems: 2
+                      maxItems: 2
+                      items: {type: integer}
+                    example: [[-1, 1], [1, 1], [3, 1], [10, 1]]
 
     StaticLines:
       type: object
@@ -2544,7 +2618,7 @@ components:
         usual:
           type: array
           description: |
-            Contract rev 18: the usual service of each line and headsign here, as `/v2/stops/{id}`
+            Contract rev 19: the usual service of each line and headsign here, as `/v2/stops/{id}`
             `usual` but with `line` as in `arrivals`. `[]` while the server has no history.
           items:
             $ref: "#/components/schemas/Usual"
@@ -2944,7 +3018,7 @@ components:
     Usual:
       type: object
       description: |
-        The usual service of an OASA Line and headsign at a Stop (contract rev 18), from the bus
+        The usual service of an OASA Line and headsign at a Stop (contract rev 19), from the bus
         passes of the days of the same day type in the last 28 days, at the same local time of
         day. Listed only with a `headway_min` or a `next_at`.
       required: [line, headsign, day_type, days, headway_min, next_hour_headway_min, next_at, spread_s]
@@ -3179,7 +3253,7 @@ components:
           type: array
           description: |
             The usual service of each OASA Line and headsign at the Stop, learnt from the past
-            weeks (contract rev 18). `[]` for other Sources and while the server has no history.
+            weeks (contract rev 19). `[]` for other Sources and while the server has no history.
           items:
             $ref: "#/components/schemas/Usual"
         updated_at:
@@ -3425,6 +3499,73 @@ components:
         urgent:
           type: boolean
           description: "`true` for a strike."
+
+    MunicipalRoute:
+      type: object
+      description: A municipal bus route of `/v2/municipal` (rev 18), one OSM route relation.
+      required: [id, ref, name, municipality, timetable_url, shape, stops]
+      properties:
+        id:
+          type: string
+          description: "`osm:r<relation id>`."
+        ref:
+          type: [string, "null"]
+          description: The line's short name; `null` when OSM has none.
+        name:
+          type: string
+        municipality:
+          type: string
+          description: The operator, spaces normalised («Δήμος Παπάγου-Χολαργού»).
+        timetable_url:
+          type: [string, "null"]
+          description: The municipality's page with the routes and times; `null` when unknown.
+        shape:
+          type: array
+          description: Lines of `[lat, lon]` pairs, 5 decimals; one line or a few.
+          items:
+            type: array
+            items:
+              type: array
+              items: {type: number}
+              minItems: 2
+              maxItems: 2
+        stops:
+          type: array
+          description: Stop ids (`osm:n<node id>`) in route order; `[]` when OSM has none.
+          items: {type: string}
+
+    MunicipalStop:
+      type: object
+      required: [name, lat, lon]
+      properties:
+        name:
+          type: [string, "null"]
+        lat:
+          type: number
+        lon:
+          type: number
+
+    MunicipalResponse:
+      type: object
+      description: The body of `/v2/municipal`.
+      required: [routes, stops, updated_at, attribution]
+      properties:
+        routes:
+          type: array
+          description: By municipality, then ref, then name.
+          items:
+            $ref: "#/components/schemas/MunicipalRoute"
+        stops:
+          type: object
+          description: Every Stop listed by a route, by id.
+          additionalProperties:
+            $ref: "#/components/schemas/MunicipalStop"
+        updated_at:
+          type: [integer, "null"]
+          description: Unix seconds of the last good poll; `null` before the first.
+        attribution:
+          type: string
+          description: The ODbL credit to show with the layer.
 
     AlertsResponse:
       type: object

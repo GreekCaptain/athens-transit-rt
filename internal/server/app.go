@@ -27,6 +27,7 @@ import (
 	"github.com/angelospk/athens-transit-rt/internal/livespeed"
 	"github.com/angelospk/athens-transit-rt/internal/match"
 	"github.com/angelospk/athens-transit-rt/internal/meta"
+	"github.com/angelospk/athens-transit-rt/internal/municipal"
 	"github.com/angelospk/athens-transit-rt/internal/rail"
 	"github.com/angelospk/athens-transit-rt/internal/release"
 	"github.com/angelospk/athens-transit-rt/internal/sched"
@@ -141,6 +142,9 @@ type App struct {
 	alerts    *alerts.Poller // /v2/alerts, polled every 10 min
 	alertHTTP *http.Client   // the alert sources
 
+	municipal     *municipal.Poller // /v2/municipal, OSM via Overpass, weekly
+	municipalBody municipalCache
+
 	starts  *runStarts // buses leaving their start: seen flags of the daily timetable
 	seenMu  sync.Mutex
 	seen    map[string]bool // trips the matcher has assigned a vehicle to, today
@@ -211,6 +215,7 @@ func New(cfg Config, log *slog.Logger) *App {
 	a.planner = newPlanner()
 	a.alertHTTP = &http.Client{Timeout: alertTimeout}
 	a.alerts = a.newAlertsPoller()
+	a.municipal = a.newMunicipalPoller()
 	return a
 }
 
@@ -371,15 +376,21 @@ func (a *App) onLine(p sched.LinePoll) {
 	}
 	for i := range results {
 		vehicles[i], board[i] = a.vehicleView(w, &results[i])
-		if a.hist != nil {
-			a.hist.Add(historyRow(w, p.Line, &results[i], ver))
-		}
 	}
 	// After vehicleView: it records the departures the shifts need.
-	daily := a.dailyShifts(w.feed, p.Line, results, p.Done)
+	daily, runs := a.dailyShifts(w.feed, p.Line, results, p.Done)
 	for i, s := range daily {
 		if s != 0 {
 			vehicles[i].DelayS = ptr(results[i].Delay - int(s))
+		}
+	}
+	if a.hist != nil {
+		for i := range results {
+			row := historyRow(w, p.Line, &results[i], ver)
+			if i < len(runs) && !runs[i].start.IsZero() {
+				row.RunStart, row.StartDelayS = runs[i].start.Unix(), ptr(runs[i].late)
+			}
+			a.hist.Add(row)
 		}
 	}
 	a.matchMu.Unlock()
@@ -647,6 +658,7 @@ func (a *App) Run(ctx context.Context) error {
 	go a.trains.Run(ctx)
 	go a.alerts.Run(ctx)
 	go a.planLoop(ctx)
+	go a.municipal.Run(ctx)
 	a.log.Info("listening", "addr", a.cfg.Listen, "metrics", a.cfg.MetricsListen, "rps", a.pacer.BaseRPS())
 	select {
 	case <-ctx.Done():

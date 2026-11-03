@@ -251,7 +251,7 @@ Harold's decisions (2026-11-04):
    confirms a run; else «Συνήθως περνά κάθε ~H′ τέτοια ώρα».
 2. Wording 2: «Συνήθως περνά κάθε ~15′ τέτοια ώρα» / «Συνήθως περνά ~21:40 (από τις
    προηγούμενες εβδομάδες)».
-3. A backend field `usual` on `/v2/stops/{id}` (contract rev 18), built nightly from the
+3. A backend field `usual` on `/v2/stops/{id}` (contract rev 19), built nightly from the
    history, no OASA load.
 
 What changed from the proposal:

@@ -22,7 +22,13 @@ a line poll:
 | `gtfs` | string | GTFS version (`gtfs_version` of `/v1/status`) |
 | `trip_id`, `shape_id` | string | empty when unmatched |
 | `s_m` | int32 | distance along the shape, m (−1 when unmatched) |
-| `delay_s` | int32 | null when unmatched |
+| `delay_s` | int32 | null when unmatched; against the GTFS trip |
+| `run_start` | int64 unix s | added 2026-11 (web#32): departure of the run of OASA's daily schedule the bus left on; empty when not known |
+| `start_delay_s` | int32 | added 2026-11: seconds the bus left after `run_start` (negative: early); empty when not known |
+
+Each file has its header, and readers look columns up by name. A file of the current hour
+written with an older header is cut of a half row and gzipped as it is when the writer opens it,
+so new rows never go under a header of other columns (if it cannot be moved, rows are lost and counted).
 
 **Dedup:** OASA repeats a fix until the vehicle reports again, so each poll returns many fixes
 already seen. Keep a map `veh → last fix_t` (bounded by the ~1,000 vehicles on the road) and
