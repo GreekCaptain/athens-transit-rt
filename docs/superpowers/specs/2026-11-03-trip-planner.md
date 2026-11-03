@@ -1,7 +1,7 @@
 # Trip planner `/v2/plan` (issue #44)
 
 Status: implemented (phase 2, PR #64; measured numbers at the end). The client contract is
-[CONTRACT.md §9](../../CONTRACT.md#9-trip-planner-v2plan-rev-15); this note is how the backend
+[CONTRACT.md §9](../../CONTRACT.md#9-trip-planner-v2plan-rev-16); this note is how the backend
 meets it and what it costs.
 
 ## Goal
@@ -169,7 +169,7 @@ around `to`.
 - `lines` and `stops` maps: the card renders without `/v2/stops/{id}` calls.
 - `shape` on every leg, for the app's route map (Harold, 2026-11-03: map route mode, the
   evening card with "leave in X", Plan B and "leave now" alerts in the first app version).
-  Rides cut the Pattern shape the backend already serves; walks are straight lines in rev 15.
+  Rides cut the Pattern shape the backend already serves; walks are straight lines in rev 16.
   Street paths for walks later: OpenRouteService for the chosen itinerary only, cached
   (sends the user's points to a third party: needs Harold's yes); no router in the container.
 - `walk_only` beside the list, not in it: a walk is always possible and would push the rides

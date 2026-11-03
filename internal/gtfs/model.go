@@ -24,6 +24,7 @@ func mustLoad(name string) *time.Location {
 type Stop struct {
 	ID       string
 	Name     string
+	Code     string // stop_code: the code on the stop sign and in OASA notices («ΚΣ»); may be empty
 	Lat, Lon float64
 }
 
@@ -92,11 +93,12 @@ type Feed struct {
 	Headsigns  []string
 	Trips      []Trip
 
-	stopIdx  map[string]int32
-	shapeIdx map[string]int32
-	tripIdx  map[string]int32
-	byLine   map[string][]int32 // trip indices in file order (upstream iteration order)
-	byStart  map[string][]int32 // the same, sorted by start
+	stopIdx     map[string]int32
+	stopsByCode map[string][]int32 // stop indices by stop_code, in file order
+	shapeIdx    map[string]int32
+	tripIdx     map[string]int32
+	byLine      map[string][]int32 // trip indices in file order (upstream iteration order)
+	byStart     map[string][]int32 // the same, sorted by start
 }
 
 // StopTime is one stop of a trip, in absolute seconds after midnight of the service day.
@@ -109,8 +111,12 @@ type StopTime struct {
 // index builds the lookup tables that are not serialised.
 func (f *Feed) index() {
 	f.stopIdx = make(map[string]int32, len(f.Stops))
+	f.stopsByCode = map[string][]int32{}
 	for i, s := range f.Stops {
 		f.stopIdx[s.ID] = int32(i)
+		if s.Code != "" {
+			f.stopsByCode[s.Code] = append(f.stopsByCode[s.Code], int32(i))
+		}
 	}
 	f.shapeIdx = make(map[string]int32, len(f.Shapes))
 	for i, s := range f.Shapes {
@@ -134,6 +140,9 @@ func (f *Feed) index() {
 
 // StopIndex returns -1 for an unknown stop id.
 func (f *Feed) StopIndex(id string) int32 { return lookup(f.stopIdx, id) }
+
+// StopsByCode returns the indices of the stops with this stop_code, in file order; nil when none.
+func (f *Feed) StopsByCode(code string) []int32 { return f.stopsByCode[code] }
 
 // ShapeIndex returns -1 for an unknown shape id.
 func (f *Feed) ShapeIndex(id string) int32 { return lookup(f.shapeIdx, id) }

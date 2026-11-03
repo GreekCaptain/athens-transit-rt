@@ -1,6 +1,7 @@
 package gtfs
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
@@ -21,6 +22,19 @@ func TestLoadZipBasics(t *testing.T) {
 	}
 	if got := f.Stops[f.StopIndex("A")].Name; got != "ΠΕΙΡΑΙΑΣ" {
 		t.Fatalf("BOM header not handled: stop A name %q", got)
+	}
+	// stop_code is the code on the stop sign («ΚΣ» in OASA notices), not the stop_id.
+	if got := f.Stops[f.StopIndex("B")].Code; got != "040054" {
+		t.Fatalf("stop B code %q", got)
+	}
+	if got := f.StopsByCode("040054"); !reflect.DeepEqual(got, []int32{f.StopIndex("B")}) {
+		t.Fatalf("StopsByCode(040054) = %v", got)
+	}
+	if got := f.StopsByCode("01"); !reflect.DeepEqual(got, []int32{f.StopIndex("A"), f.StopIndex("C")}) {
+		t.Fatalf("a code shared by two stops: %v", got)
+	}
+	if f.StopsByCode("B") != nil || f.StopsByCode("") != nil {
+		t.Fatal("a stop_id or an empty code is no stop code")
 	}
 	t1 := f.Trip(f.TripIndex("t1"))
 	if f.Headsign(t1) != "ΣΥΝΤΑΓΜΑ" {

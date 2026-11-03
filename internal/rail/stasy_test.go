@@ -281,3 +281,43 @@ func TestCopyCapped(t *testing.T) {
 		t.Fatalf("copyCapped = %d %v %q", n, err, b.String())
 	}
 }
+
+// STASY names every M2 trip after its first stop (rt#34): such a headsign becomes the last stop.
+// A headsign that names the last stop, both ends (a loop) or neither end is kept.
+func TestSTASYOriginHeadsign(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range stasyFixture(t) {
+		switch name {
+		case "trips.txt":
+			body += "R2,wd,X-origin,ΣΥΝΤΑΓΜΑ,0\nR2,wd,X-folded,Ομόνοια,1\nR2,wd,X-loop,ΣΥΝΤΑΓΜΑ,0\nR2,wd,X-other,ΚΕΝΤΡΟ,0\n"
+		case "stop_times.txt":
+			body += "X-origin,11:00:00,11:00:00,P1,1\nX-origin,11:02:00,11:02:00,O1,2\nX-origin,11:20:00,11:20:00,E1,3\n" +
+				"X-folded,11:00:00,11:00:00,O1,1\nX-folded,11:20:00,11:20:00,A1,2\n" +
+				"X-loop,11:00:00,11:00:00,P1,1\nX-loop,11:02:00,11:02:00,O1,2\nX-loop,11:20:00,11:20:00,P2,3\n" +
+				"X-other,11:00:00,11:00:00,P1,1\nX-other,11:20:00,11:20:00,E1,2\n"
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f, err := ParseSTASY(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for trip, want := range map[string]string{
+		"X-origin": "ΕΛΛΗΝΙΚΟ",  // ΣΥΝΤΑΓΜΑ is where it starts
+		"X-folded": "ΑΝΘΟΥΠΟΛΗ", // case and accents do not hide the first stop
+		"X-loop":   "ΣΥΝΤΑΓΜΑ",  // starts and ends at ΣΥΝΤΑΓΜΑ: nothing to correct
+		"X-other":  "ΚΕΝΤΡΟ",    // names neither end: kept
+		"M2-1":     "ΕΛΛΗΝΙΚΟ",  // already the last stop
+		"M1-2":     "ΚΗΦΙΣΙΑ",   // empty: the last stop
+	} {
+		ti, ok := f.TripIndex(trip)
+		if !ok {
+			t.Fatalf("no trip %s", trip)
+		}
+		if _, _, got := f.TripInfo(ti); got != want {
+			t.Errorf("%s: headsign %q, want %q", trip, got, want)
+		}
+	}
+}

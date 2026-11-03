@@ -174,7 +174,7 @@ Full field rules: [`CONTRACT.md`](CONTRACT.md#unified-api-v2-rev-8); terms:
 | `GET /v2/vehicles/suburban` | suburban trains (opens the railway.gov.gr stream) | 5 s with trains, else 15 s |
 | `GET /v2/runs/{id}` | one Run (a trip of one day) with every stop and its time | 15 s |
 | `GET /v2/alerts` | service disruptions (rev 13): OASA notices and strikes | 5 min |
-| `GET /v2/plan` | trips from a point to a point with transfers, from the timetables (rev 15) | 1 min |
+| `GET /v2/plan` | trips from a point to a point with transfers, from the timetables (rev 16) | 1 min |
 
 - **Ids** are `<source>:<native>` and must be percent-encoded in a URL: `oasa:040`,
   `stasy:M2`, `stasy:συνταγμα-metro`, `proastiakos:KIATO`,
@@ -238,7 +238,7 @@ the straight line × 1.3 at 1.2 m/s (+120 s at a metro or suburban Stop), up to 
 and 500 m between rides, with at least 60 s of waiting before each later ride. `walk_only` is the
 walk when the points are at most 1000 m apart. Every leg has a `shape` for a route map. Errors:
 `400` `bad_from`, `bad_to`, `outside_area`, `bad_after`, `bad_n`; `429 busy` (`Retry-After: 2`)
-when two plans are already running. Full rules: [`CONTRACT.md` §9](CONTRACT.md#9-trip-planner-v2plan-rev-15);
+when two plans are already running. Full rules: [`CONTRACT.md` §9](CONTRACT.md#9-trip-planner-v2plan-rev-16);
 example: [`fixtures/v2/plan.json`](fixtures/v2/plan.json).
 
 ```bash

@@ -14,9 +14,11 @@ Source of truth: `athens-transit-rt/docs/CONTRACT.md`. The frontend keeps a copy
   frontend repo by whoever made it (backend thread opens the copy as a commit or
   issue on the frontend repo).
 
-Revision: 15 (2026-11-03, proposed in PR #44's branch, not live): `GET /v2/plan`, trips from a
-point to a point with walks and transfers ([§9](#9-trip-planner-v2plan-rev-15))
-(rev 14: on an expired GTFS, `delay_s` (and a stop board's `scheduled`) of a
+Revision: 16 (2026-11-03, PR #64, live once deployed): `GET /v2/plan`, trips from a point to a
+point with walks and transfers ([§9](#9-trip-planner-v2plan-rev-16))
+(rev 15: OASA Patterns and bus Vehicles get both directions, 0 and 1 (the
+GTFS has no `direction_id`, so all were 0); metro M2 `headsign` is where the train goes, not
+where it starts; rev 14: on an expired GTFS, `delay_s` (and a stop board's `scheduled`) of a
 bus seen leaving on a clear run of OASA's daily schedule is against that run; rev 13: `GET /v2/alerts`, service disruptions (OASA notices and strikes); rev 12: `direction` on `/v2` Vehicles; STASY Pattern directions follow branches (M3 airport);
 rev 11: `/v2/stops/{id}` bus Arrivals include OASA's own predictions; rev 10: live responses send `Access-Control-Expose-Headers: Date`; rev 9: `at_terminus` on `/v1/lines/{line_id}` vehicles and `/v2` Vehicles; rev 8: `GET /v1/stops/{stop_id}` (a stop board); the unified `/v2` API
 ([below](#unified-api-v2-rev-8)); rev 7: `path_speeds` also follow today's traffic (same shape and units); rev 6: `path_speeds` on vehicles (typical speeds ahead); rev 5: `GET /v1/vehicles/tiles/{z}/{x}/{y}`; rev 4: `path_beyond` and `path_stops` on vehicles; rev 3: `GET /v1/vehicles`; `speed` and
@@ -648,7 +650,7 @@ All: UTF-8 JSON, `Access-Control-Allow-Origin: *`, gzip, times in Unix seconds, 
 | `GET /v2/vehicles/suburban` | as `/v2/vehicles`, suburban trains (~10, one body) | until `next_update_at`, 5-30 | `proastiakos`: opens the stream |
 | `GET /v2/runs/{id}` | `{run: Run, sources}` | 15 | none |
 | `GET /v2/alerts` (rev 13) | `{alerts: [Alert], updated_at}` | 300 | none (polled in the background) |
-| `GET /v2/plan?from=&to=&after=&last=&n=` (rev 15) | `{service_day, …, itineraries: [Itinerary], walk_only, lines, stops, sources}` ([§9](#9-trip-planner-v2plan-rev-15)) | 60 | none (reads only what is already loaded) |
+| `GET /v2/plan?from=&to=&after=&last=&n=` (rev 16) | `{service_day, …, itineraries: [Itinerary], walk_only, lines, stops, sources}` ([§9](#9-trip-planner-v2plan-rev-16)) | 60 | none (reads only what is already loaded) |
 
 Shapes not shown above:
 
@@ -674,7 +676,7 @@ Shapes not shown above:
  "title": "Μερική προσωρινή τροποποίηση της λεωφορειακής γραμμής 112 στον Δήμο Αγ. Δημητρίου",
  "url": "https://www.oasa.gr/blog/...", "published": 1793336520,
  "from": "2026-10-31", "until": "2026-11-01",
- "modes": ["bus"], "lines": ["oasa:112"], "stops": ["oasa:040054"], "urgent": false}
+ "modes": ["bus"], "lines": ["oasa:112"], "stops": ["oasa:40054"], "urgent": false}
 ```
 
 Rules:
@@ -683,7 +685,9 @@ Rules:
   - `source: "oasa"`: the OASA news feed (`oasa.gr/feed`), every item except tenders
     (category «Διαγωνισμοί»). Buses and trolleys only. `lines`: the line codes that follow
     «γραμμή/γραμμών» in the title, as `/v2` Line ids, only those the GTFS knows. `stops`: the
-    «ΚΣ <code>» stop codes in the text, as Stop ids, only known ones. `from`/`until`: the
+    «ΚΣ <code>» stop codes in the text (the code on the stop sign, GTFS `stop_code`; «ΚΣ 040054»
+    is Stop `oasa:40054`), as Stop ids. A code the GTFS does not know (e.g. a temporary stop) is
+    left out; a code that two stops share gives both. `from`/`until`: the
     earliest and latest date (Athens, `YYYY-MM-DD`) in the opening paragraph of the notice
     (up to «ως εξής»); `null` when it names none. `modes`: `bus`, plus `trolley` when one of
     the lines is a trolley line; both when `lines` is empty (a network-wide notice).
@@ -711,8 +715,14 @@ Rules:
   (key absent), as rev 5 drops the path keys.
 - Metro/tram vehicles are placed when `/v2/vehicles/rail` is built (per request, cached 15 s);
   their `knots` keep them moving.
-- Pattern `direction` (rev 12): every Line has two directions, 0 and 1, never more. OASA and
-  suburban: the GTFS / corridor direction. Metro/tram: the most common Pattern is 0; each other
+- Pattern `direction` (rev 12): every Line has two directions, 0 and 1, never more. Suburban:
+  the corridor direction. OASA (rev 15): OASA's GTFS has no `direction_id`, so the direction
+  comes from where each Pattern runs: a Pattern whose first and last Stops lie nearer the ends of
+  the busiest Pattern than its swapped ends runs its way (a short turn included); 0 is the way
+  towards the place after the last " - " of the Line name, the way `/v1/lines/{id}/schedule`
+  calls 0; a loop Line is 0. When neither the name nor the headsigns tell the places apart (no
+  " - " in the name, or headsigns that name both or neither), the busiest Pattern's way is 0 and
+  may then differ from `/v1`. Metro/tram: the most common Pattern is 0; each other
   Pattern is 0 or 1 by the order of two Stops it shares with a Pattern already decided, so a
   branch that shares one Stop with the main Pattern (M3 airport) still gets the right one. M3:
   every Pattern towards ΕΛ. ΒΕΝΙΖΕΛΟΣ or Δ. ΠΛΑΚΕΝΤΙΑΣ is 1, every one towards ΔΗΜΟΤΙΚΟ ΘΕΑΤΡΟ
@@ -720,7 +730,7 @@ Rules:
 - `/v2/runs/{id}` replaces `/v1/rail/stasy/trips/{id}` and `/v1/rail/suburban/trains/{no}` for
   the line card. It answers for any Run of the service day, started or not (`vehicle: null`
   before it starts). OASA: the matched trip's stops, timetable time plus observed delay.
-  `404 {"error":"unknown_run"}` outside the service day (rev 15: a Run that `/v2/plan` returned
+  `404 {"error":"unknown_run"}` outside the service day (rev 16: a Run that `/v2/plan` returned
   answers until 03:00 after its service day, §9).
 - Unknown ids: `404` `unknown_line` / `unknown_stop` / `unknown_run`. A Source still loading:
   `200` with the Source `warming_up` in `sources`, empty lists, and `null` for a single object
@@ -794,7 +804,7 @@ Rules:
   (Service disruptions are `/v2/alerts`, rev 13; a different thing.)
 - MCP tools keep their names; they may switch to the `/v2` model inside without a contract change.
 
-### 9. Trip planner `/v2/plan` (rev 15)
+### 9. Trip planner `/v2/plan` (rev 16)
 
 Implemented 2026-11-03 for issue #44 (PR #64; live once deployed), for the app's evening section «Τελευταία για σπίτι». Trips from a point to
 a point: a walk to a Stop, one to four rides of any Mode with walks between them, and a walk to
@@ -872,7 +882,7 @@ Rules:
   Modes of the rides, in ride order, without repeats.
 - **Ride leg**: `line`, `mode`, `headsign` as in the Line and Run; `run` is the Run id
   (§3), so the client can open `/v2/runs/{id}` for its live state; `hops` is the number of
-  stops the ride moves past, the last one included. `source` is always `timetable` in rev 15:
+  stops the ride moves past, the last one included. `source` is always `timetable` in rev 16:
   times are the timetable's, never live. A bus on an expired GTFS has the times of OASA's
   daily schedule (departure from the first stop plus the stop's offset in the GTFS trip that
   stands for it, as `/v2/stops/{id}` timetable Arrivals have).
@@ -898,7 +908,7 @@ Rules:
 - **`shape`** (every leg, for the route map): `[[lat, lon], …]`, 5 decimals, at least 2 points.
   A ride: its Pattern `shape` cut from the board Stop to the alight Stop (the stops' nearest
   points on it, in ride order); when the Pattern has no shape, the stops' own points in order.
-  A walk: in rev 15 the straight line from its start to its end (clients draw it dotted); a
+  A walk: in rev 16 the straight line from its start to its end (clients draw it dotted); a
   later rev may give the path along streets with the same key. The first and last point of a
   leg are its `from` and `to` points.
 - **Live state and Plan B (client rules)**: the plan is timetable only. For the first ride the
@@ -925,7 +935,7 @@ Rules:
 - **Cache**: `max-age=60` when complete; `max-age=5` when a Source is `warming_up` or `down`
   (§5). No `ETag`. Clients round `from` and `to` to 4 decimals (about 10 m) and `after` to the
   minute, so equal questions hit the same cache entry.
-- **Not in rev 15**: live delays in a plan; the "risky" mark of a ride whose line often drops
+- **Not in rev 16**: live delays in a plan; the "risky" mark of a ride whose line often drops
   its last runs (needs the seen/missed stats, about 2-3 weeks from 2026-10-30); a Mode filter;
   `arrive_by`; fares; accessibility; any day but the current service day.
 

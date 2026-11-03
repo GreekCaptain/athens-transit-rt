@@ -65,14 +65,26 @@ func (a *App) knownLine(code string) (string, string, bool) {
 	return oasaPrefix + code, mode, true
 }
 
-// knownStop reports whether code is a Stop id of the current GTFS.
-func (a *App) knownStop(code string) bool {
+// stopIDs returns the Stop ids (GTFS stop_id) of a stop code (GTFS stop_code, «ΚΣ» in OASA
+// notices); nil when none.
+func (a *App) stopIDs(code string) []string {
 	w := a.world()
-	return w != nil && w.feed.StopIndex(code) >= 0
+	if w == nil {
+		return nil
+	}
+	idx := w.feed.StopsByCode(code)
+	if len(idx) == 0 {
+		return nil
+	}
+	ids := make([]string, len(idx))
+	for i, s := range idx {
+		ids[i] = w.feed.Stops[s].ID
+	}
+	return ids
 }
 
 // newAlertsPoller is the /v2/alerts poller of this App.
 func (a *App) newAlertsPoller() *alerts.Poller {
-	return &alerts.Poller{Get: a.alertGet, KnownLine: a.knownLine, KnownStop: a.knownStop,
+	return &alerts.Poller{Get: a.alertGet, KnownLine: a.knownLine, StopIDs: a.stopIDs,
 		Now: func() time.Time { return a.now() }, Log: a.log}
 }

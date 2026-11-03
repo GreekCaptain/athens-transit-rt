@@ -9,18 +9,31 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
 ## Unreleased
 
 ### Live API
-- `GET /v2/plan` (contract rev 15): a trip planner for the app's evening section. From a point
+- `GET /v2/plan` (contract rev 16): a trip planner for the app's evening section. From a point
   to a point, the first `n` options after `after`, or with `last=true` the last `n` of the
   service day: walks, one to four rides of any mode (bus, trolley, metro, tram, suburban) and the
   walks between them, from the timetables the backend already holds (no new load on OASA, STASY
   or railway.gov.gr). RAPTOR in process (`internal/plan`), rebuilt for each service day. Every
   leg has a `shape`; every ride's `run` opens with `/v2/runs/{id}`, also after midnight until
   03:00 ([#44](https://github.com/angelospk/athens-transit-rt/issues/44)).
+- `/v2` OASA Patterns and bus Vehicles have both directions (contract rev 15): OASA's GTFS has
+  no `direction_id`, so every Pattern was 0 (`oasa:040`: 5512 and 5513 both 0). The direction now
+  comes from where each Pattern runs, and 0 is the way `/v1/lines/{id}/schedule` calls 0
+  ([#45](https://github.com/angelospk/athens-transit-rt/issues/45)).
+- Metro M2 headsigns name where the train goes: STASY names every M2 trip after its first stop,
+  so `/v1` and `/v2` showed «→ Ελληνικό» on trains leaving Ελληνικό. Such a headsign is now the
+  trip's last stop ([#34](https://github.com/angelospk/athens-transit-rt/issues/34)).
+- `/v2/alerts`: `stops` now lists the Stops of an OASA notice. Its «ΚΣ 040054» codes are the
+  codes on the stop signs (GTFS `stop_code`), not stop ids, so none matched before; «ΚΣ 040054»
+  is Stop `oasa:40054` ([#54](https://github.com/angelospk/athens-transit-rt/issues/54)).
 - While the GTFS is expired, a bus whose variant has no trip around now on today's weekday is
   matched against the trips of that variant on the nearest weekday that has some. OASA moved
   some variants to other weekdays since the 2026-07-08 feed (309Β runs 5863 on Tuesdays too):
   on 2026-11-03, 30 of 48 unmatched buses had this cause. The local `/metrics` now counts
   vehicles and unmatched vehicles per line ([#51](https://github.com/angelospk/athens-transit-rt/issues/51)).
+  The minute `stats` log line also names the lines whose buses all lack a trip
+  (`unmatched_lines=054,309Β`), so such a line shows up in the log without anyone spotting it
+  on the map ([#51](https://github.com/angelospk/athens-transit-rt/issues/51)).
 - Bus delays against OASA's daily schedule while the GTFS is expired (contract rev 14): a bus seen leaving on a
   daily run is late or early against that run, not against the old GTFS trip (`/v1/lines`, stop
   boards, `/v2` Vehicles and Runs). Buses not seen leaving, or whose run is unclear, keep the GTFS
