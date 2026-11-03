@@ -174,6 +174,7 @@ Full field rules: [`CONTRACT.md`](CONTRACT.md#unified-api-v2-rev-8); terms:
 | `GET /v2/vehicles/suburban` | suburban trains (opens the railway.gov.gr stream) | 5 s with trains, else 15 s |
 | `GET /v2/runs/{id}` | one Run (a trip of one day) with every stop and its time | 15 s |
 | `GET /v2/alerts` | service disruptions (rev 13): OASA notices and strikes | 5 min |
+| `GET /v2/plan` | trips from a point to a point with transfers, from the timetables (rev 16) | 1 min |
 
 - **Ids** are `<source>:<native>` and must be percent-encoded in a URL: `oasa:040`,
   `stasy:M2`, `stasy:συνταγμα-metro`, `proastiakos:KIATO`,
@@ -223,6 +224,28 @@ empty list before the first). Show an Alert from `from` to `until`, and 3 days a
 # Every Alert now, newest first
 curl -s https://transit.haroldpoi.dev/v2/alerts \
   | jq -r '.alerts[] | [.source, .from, .until, (.modes|join(",")), .title] | @tsv'
+```
+
+### Trip planner (`/v2/plan`)
+
+`GET /v2/plan?from=<lat,lon>&to=<lat,lon>[&after=<unix>][&last=true][&n=1-5]` plans trips inside
+Attica: a walk to a Stop, one to four rides of any mode with walks between them, and a walk to
+the end. It reads the timetables only (`source: timetable`; open a ride's `run` with
+`/v2/runs/{id}` for its live state). `last=true` gives the last `n` options of the service day
+(03:00 to 03:00 Athens time), else the first `n` within 3 h of `after` (default now). An option
+is left out when another leaves no earlier, arrives no later and has no more transfers. Walks are
+the straight line × 1.3 at 1.2 m/s (+120 s at a metro or suburban Stop), up to 1000 m at the ends
+and 500 m between rides, with at least 60 s of waiting before each later ride. `walk_only` is the
+walk when the points are at most 1000 m apart. Every leg has a `shape` for a route map. Errors:
+`400` `bad_from`, `bad_to`, `outside_area`, `bad_after`, `bad_n`; `429 busy` (`Retry-After: 2`)
+when two plans are already running. Full rules: [`CONTRACT.md` §9](CONTRACT.md#9-trip-planner-v2plan-rev-16);
+example: [`fixtures/v2/plan.json`](fixtures/v2/plan.json).
+
+```bash
+# The last 3 trips of the day from Σύνταγμα to Γλυφάδα that leave after 23:30
+curl -s "https://transit.haroldpoi.dev/v2/plan?from=37.9753,23.7355&to=37.8739,23.7540&last=true&after=$(date -d 23:30 +%s)" \
+  | jq -r '.itineraries[] | [(.depart_at|localtime|strftime("%H:%M")), (.arrive_at|localtime|strftime("%H:%M")),
+      ([.legs[] | select(.kind=="ride") | .line] | join(" → "))] | @tsv'
 ```
 
 ## OASA's predictions at a stop
@@ -507,6 +530,8 @@ stateless, no authentication, read-only). Names are Greek, times are Europe/Athe
 | `503` | `{"error":"feed_unavailable"}` | the GTFS-RT feed is not built yet after a start |
 | `503` | `{"error":"busy"}` | stop arrivals: the server's OASA request queue is full and nothing recent is cached; retry shortly |
 | `502` | `{"error":"upstream_unavailable"}` | OASA (or the rail source) failed and nothing recent is cached |
+| `400` | `{"error":"bad_from"}` etc. | `/v2/plan`: a bad parameter (`bad_from`, `bad_to`, `outside_area`, `bad_after`, `bad_n`) |
+| `429` | `{"error":"busy"}` | `/v2/plan`: two plans are running; retry after `Retry-After` (2 s) |
 | `429` | (from Cloudflare) | more than about 30 requests per 10 s from one IP; wait at least 10 s |
 
 - `/v1/status` reports `ok: false` when no line poll succeeded in the last 5 minutes. During an
