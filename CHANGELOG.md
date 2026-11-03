@@ -9,12 +9,19 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
 ## Unreleased
 
 ### Live API
-- `/v2/stops/{id}` gets `usual` (contract rev 18): per OASA line and headsign, how often a bus
+- `/v2/stops/{id}` and `/v1/stops/{stop_id}` get `usual` (contract rev 18): per OASA line and headsign, how often a bus
   usually passes in this hour of this kind of day, and, when the past weeks agree (≥ 3 days,
   waits within 3 min) and today's timetable has a run near it, the usual time of the next pass.
   Learnt nightly from the fix history on disk (one ~1.2 MB file of stop passes per day in
   `<state>/usual`), so no new OASA calls. For the stop card's lines with no live bus
   ([map#24](https://github.com/angelospk/athens-transit-map/issues/24)).
+- `GET /v2/plan` (contract rev 16): a trip planner for the app's evening section. From a point
+  to a point, the first `n` options after `after`, or with `last=true` the last `n` of the
+  service day: walks, one to four rides of any mode (bus, trolley, metro, tram, suburban) and the
+  walks between them, from the timetables the backend already holds (no new load on OASA, STASY
+  or railway.gov.gr). RAPTOR in process (`internal/plan`), rebuilt for each service day. Every
+  leg has a `shape`; every ride's `run` opens with `/v2/runs/{id}`, also after midnight until
+  03:00 ([#44](https://github.com/angelospk/athens-transit-rt/issues/44)).
 - `/v2` OASA Patterns and bus Vehicles have both directions (contract rev 15): OASA's GTFS has
   no `direction_id`, so every Pattern was 0 (`oasa:040`: 5512 and 5513 both 0). The direction now
   comes from where each Pattern runs, and 0 is the way `/v1/lines/{id}/schedule` calls 0
