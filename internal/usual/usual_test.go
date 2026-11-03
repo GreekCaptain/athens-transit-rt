@@ -586,12 +586,6 @@ func TestBuildDayReadsOldAndNewHeaders(t *testing.T) {
 	byFile := map[string][]fix{}
 	for _, x := range all {
 		name := x.t.UTC().Format("2006-01-02T15") + ".csv.gz"
-		if !x.t.Before(at(day, 8, 0)) {
-			name = x.t.UTC().Format("2006-01-02T15") + ".1.csv.gz" // new header, same hour as the last old one
-			if x.t.UTC().Hour() != at(day, 7, 0).UTC().Hour() {
-				name = x.t.UTC().Format("2006-01-02T15") + ".csv.gz"
-			}
-		}
 		byFile[name] = append(byFile[name], x)
 	}
 	// v1 crosses A (3000 m) between 07:59:50 (old file) and 08:00:10 (new file); v2 crosses A
