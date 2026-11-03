@@ -26,8 +26,8 @@ const (
 	fileExt    = ".pass"       // day files: YYYYMMDD.pass
 	magic      = "ATRTPASS1\n" // file format version
 	dateLayout = "20060102"    // day file names
-	maxHeader  = 64 << 20      // a larger header is a damaged file
-	maxBlock   = 16 << 20      // so is a larger stop block
+	maxHeader  = 8 << 20       // a larger header is a damaged file (real ones: ~0.2 MB)
+	maxBlock   = 1 << 20       // so is a larger stop block (real ones: ≤ ~20 KB)
 	hourS      = 3600          // seconds per hour
 	minHeadway = 1             // minutes; a shorter median gap shows as 1
 )
@@ -316,27 +316,28 @@ func (s *Store) Close() {
 	}
 }
 
-// passes reads one stop's passes of a day, by key.
-func (d *dayFile) passes(stop string) map[Key][]int64 {
+// passes reads one stop's passes of a day, by key: empty for a stop with none that day, ok
+// false when its block cannot be read.
+func (d *dayFile) passes(stop string) (map[Key][]int64, bool) {
+	out := map[Key][]int64{}
 	i := sort.SearchStrings(d.stops, stop)
 	if i == len(d.stops) || d.stops[i] != stop {
-		return nil
+		return out, true
 	}
 	n := d.offs[i+1] - d.offs[i]
 	if n <= 0 || n > maxBlock {
-		return nil
+		return nil, false
 	}
 	b := make([]byte, n)
 	if _, err := d.f.ReadAt(b, d.offs[i]); err != nil {
-		return nil
+		return nil, false
 	}
 	r := &reader{b: b}
-	out := map[Key][]int64{}
 	ns := r.uv()
 	for k := uint64(0); k < ns && r.ok(); k++ {
 		ki, cnt := r.uv(), r.uv()
-		if ki >= uint64(len(d.keys)) || cnt > uint64(len(b)) {
-			return nil
+		if ki >= uint64(len(d.keys)) || cnt > uint64(len(r.b)) { // each time takes ≥ 1 byte
+			return nil, false
 		}
 		ts := make([]int64, 0, cnt)
 		t := d.start
@@ -347,13 +348,48 @@ func (d *dayFile) passes(stop string) map[Key][]int64 {
 		out[d.keys[ki]] = ts
 	}
 	if !r.ok() {
-		return nil
+		return nil, false
 	}
-	return out
+	return out, true
 }
 
-func (d *dayFile) outage(from, to int64) bool {
-	for _, o := range d.outages {
+// span is one training day's passes at a stop, continued by the next day's file when there is
+// one, so a lookup near DayStartH sees past it. After until nothing is known (no file):
+// blind like an outage.
+type span struct {
+	date    time.Time
+	ps      map[Key][]int64
+	outages [][2]int64
+	until   int64
+}
+
+// spanOf reads the span of day d at stop; ok false when d's block cannot be read. Call with
+// s.mu held.
+func (s *Store) spanOf(d *dayFile, stop string) (*span, bool) {
+	ps, ok := d.passes(stop)
+	if !ok {
+		return nil, false
+	}
+	_, end := dayBounds(d.date)
+	sp := &span{date: d.date, ps: ps, outages: d.outages, until: end}
+	if next := s.days[d.date.AddDate(0, 0, 1)]; next != nil {
+		if nps, ok := next.passes(stop); ok {
+			for k, ts := range nps {
+				sp.ps[k] = append(sp.ps[k], ts...)
+			}
+			sp.outages = append(append([][2]int64(nil), d.outages...), next.outages...)
+			_, sp.until = dayBounds(next.date)
+		}
+	}
+	return sp, true
+}
+
+// blind reports whether [from, to] is not fully seen: an outage, or past the known files.
+func (sp *span) blind(from, to int64) bool {
+	if to > sp.until {
+		return true
+	}
+	for _, o := range sp.outages {
 		if o[0] <= to && from < o[1] {
 			return true
 		}
@@ -382,42 +418,41 @@ func (s *Store) Query(stop string, now time.Time) []Row {
 			days = append(days, df)
 		}
 	}
-	type dayPasses struct {
-		d  *dayFile
-		ps map[Key][]int64
-	}
-	var all []dayPasses
+	var spans []*span
 	keys := map[Key]bool{}
 	for _, df := range days {
-		ps := df.passes(stop)
-		for k := range ps {
+		sp, ok := s.spanOf(df, stop)
+		if !ok {
+			continue // unreadable: not a day without buses
+		}
+		for k := range sp.ps {
 			keys[k] = true
 		}
-		all = append(all, dayPasses{df, ps})
+		spans = append(spans, sp)
 	}
 	s.mu.RUnlock()
 	stats := map[Key]*keyStats{}
 	for k := range keys {
 		stats[k] = &keyStats{}
 	}
-	for _, dp := range all {
-		q := wallClock(dp.d.date, qs).Unix()
-		h0 := wallClock(dp.d.date, hour*hourS).Unix()
-		h1 := wallClock(dp.d.date, (hour+1)*hourS).Unix()
-		h2 := wallClock(dp.d.date, (hour+2)*hourS).Unix()
+	for _, sp := range spans {
+		q := wallClock(sp.date, qs).Unix()
+		h0 := wallClock(sp.date, hour*hourS).Unix()
+		h1 := wallClock(sp.date, (hour+1)*hourS).Unix()
+		h2 := wallClock(sp.date, (hour+2)*hourS).Unix()
 		for k, st := range stats {
-			ts := dp.ps[k]
+			ts := sp.ps[k]
 			i := sort.Search(len(ts), func(i int) bool { return ts[i] >= q })
 			if i < len(ts) && ts[i]-q <= MaxWaitS {
-				if !dp.d.outage(q, ts[i]) {
+				if !sp.blind(q, ts[i]) {
 					st.usable++
 					st.waits = append(st.waits, ts[i]-q)
 				}
-			} else if !dp.d.outage(q, q+MaxWaitS) {
+			} else if !sp.blind(q, q+MaxWaitS) {
 				st.usable++
 			}
-			st.gaps = append(st.gaps, gaps(dp.d, ts, h0, h1)...)
-			st.next = append(st.next, gaps(dp.d, ts, h1, h2)...)
+			st.gaps = append(st.gaps, gaps(sp, ts, h0, h1)...)
+			st.next = append(st.next, gaps(sp, ts, h1, h2)...)
 		}
 	}
 	var out []Row
@@ -445,11 +480,11 @@ func (s *Store) Query(stop string, now time.Time) []Row {
 	return out
 }
 
-// gaps are the gaps after each pass in [from, to) of one day, up to MaxWaitS, outages left out.
-func gaps(d *dayFile, ts []int64, from, to int64) []int64 {
+// gaps are the gaps after each pass in [from, to) of one span, up to MaxWaitS, outages left out.
+func gaps(sp *span, ts []int64, from, to int64) []int64 {
 	var out []int64
 	for i := sort.Search(len(ts), func(i int) bool { return ts[i] >= from }); i+1 < len(ts) && ts[i] < to; i++ {
-		if g := ts[i+1] - ts[i]; g <= MaxWaitS && !d.outage(ts[i], ts[i+1]) {
+		if g := ts[i+1] - ts[i]; g <= MaxWaitS && !sp.blind(ts[i], ts[i+1]) {
 			out = append(out, g)
 		}
 	}

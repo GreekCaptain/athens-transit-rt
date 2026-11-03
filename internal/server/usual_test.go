@@ -145,9 +145,9 @@ func TestBuildUsual(t *testing.T) {
 	if !st.Has(day) {
 		t.Fatalf("day not built; tried %v", tried)
 	}
-	// The other days had no history: tried once for this feed, not again.
-	if len(tried) != usual.TrainDays {
-		t.Errorf("tried %d days, want %d", len(tried), usual.TrainDays)
+	// The other days had no history: remembered for this feed, not read again.
+	if len(tried) != usual.TrainDays-1 || tried[day] != "" {
+		t.Errorf("tried %d days (built day in it: %q), want %d", len(tried), tried[day], usual.TrainDays-1)
 	}
 	if _, err := os.Stat(filepath.Join(a.cfg.StateDir, "usual", "20261002.pass")); err != nil {
 		t.Fatal(err)
@@ -182,5 +182,21 @@ func TestV1StopUsual(t *testing.T) {
 	_, body = get(t, a2, "/v1/stops/S3")
 	if !strings.Contains(string(body), `"usual":[]`) {
 		t.Fatalf("no store: %s", body)
+	}
+}
+
+// A failed build (here: no history directory) is retried at the next tick; only "no rows of
+// this feed" is remembered.
+func TestBuildUsualRetriesErrors(t *testing.T) {
+	a := newApp(t, monday1020)
+	st, err := usual.OpenStore(filepath.Join(a.cfg.StateDir, "usual"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	tried := map[time.Time]string{}
+	a.buildUsual(st, tried)
+	if len(tried) != 0 {
+		t.Fatalf("errors remembered as tried: %d days", len(tried))
 	}
 }

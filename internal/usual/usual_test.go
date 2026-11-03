@@ -475,3 +475,81 @@ func TestStoreSkipsBadFiles(t *testing.T) {
 		t.Errorf("a bad file loaded")
 	}
 }
+
+// A crossing between 03:58 and 04:01 belongs to the day: the fix after 04:00 is read too.
+func TestBuildDayCrossingAtTheEnd(t *testing.T) {
+	day := date(2026, 11, 4)
+	fixes := append(keepAlive(at(day, 4, 0), at(day, 28, 0)),
+		fix{at(day, 27, 50), "v1", "T1", 100, ""}, fix{at(day, 27, 58), "v1", "T1", 2900, ""},
+		fix{at(day, 28, 1), "v1", "T1", 3200, ""})
+	dir := t.TempDir()
+	writeFixes(t, dir, fixes)
+	d, _ := BuildDay(dir, day, testFeed, fakeRoutes{})
+	if got := strings.Join(passesOf(d), "; "); got != "A 040 Πειραιάς 03:59:00" {
+		t.Errorf("passes %q, want the one at 03:59:00", got)
+	}
+}
+
+// At 03:50 the next pass of the training days is at 04:10, in their next day's file.
+func TestQueryAcrossTheDayBoundary(t *testing.T) {
+	var days []*Day
+	for _, d := range weekdays() {
+		day := NewDay(d)
+		series(day, d, "27:20:00") // 03:20, then nothing on this service day
+		days = append(days, day)
+		next := NewDay(d.AddDate(0, 0, 1))
+		series(next, d.AddDate(0, 0, 1), "04:10:00", "04:20:00")
+		days = append(days, next)
+	}
+	r := only(t, store(t, days...).Query("A", at(date(2026, 11, 5), 3, 50)))
+	if r.NextAt == nil || *r.NextAt != at(date(2026, 11, 5), 4, 10).Unix() {
+		t.Errorf("next_at %v, want 04:10", r.NextAt)
+	}
+}
+
+// A training day whose next day has no file cannot say there was no bus after 04:00.
+func TestQueryUnknownAfterTheDay(t *testing.T) {
+	var days []*Day
+	for i, d := range []time.Time{date(2026, 10, 27), date(2026, 10, 29), date(2026, 10, 30),
+		date(2026, 11, 2), date(2026, 10, 23), date(2026, 10, 21)} {
+		day := NewDay(d)
+		if i < 3 {
+			series(day, d, "27:20:00", "27:40:00")
+		} else {
+			series(day, d, "27:20:00") // its next day is not on disk: unknown, not "no bus"
+		}
+		days = append(days, day)
+	}
+	// 03:30: three days have 03:40; three have nothing before 04:00 and no file after.
+	r := only(t, store(t, days...).Query("A", at(date(2026, 11, 5), 3, 30)))
+	if r.NextAt == nil || r.Days != 3 {
+		t.Errorf("row %+v, want 3 days and a time", r)
+	}
+}
+
+// A damaged stop block makes that day unreadable for the stop, not a day without buses.
+func TestQueryDamagedBlockIsNotADayWithoutBuses(t *testing.T) {
+	dir := t.TempDir()
+	for i, d := range append(weekdays(), date(2026, 10, 20), date(2026, 10, 21)) {
+		day := NewDay(d)
+		series(day, d, "08:10:00")
+		if err := WriteDay(dir, day); err != nil {
+			t.Fatal(err)
+		}
+		if i >= 3 { // 3 damaged days: the last byte of A's block (its only block) can never end
+			p := filepath.Join(dir, d.Format("20060102")+".pass")
+			b, _ := os.ReadFile(p)
+			b[len(b)-1] = 0xff
+			os.WriteFile(p, b, 0o644)
+		}
+	}
+	s, err := OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r := only(t, s.Query("A", query))
+	if r.NextAt == nil || r.Days != 3 {
+		t.Errorf("row %+v, want a time from the 3 readable days", r)
+	}
+}

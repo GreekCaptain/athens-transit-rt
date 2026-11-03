@@ -106,7 +106,8 @@ type run struct {
 // counts for the outages. A nil Day means no row of that feed: nothing to learn from.
 func BuildDay(dir string, date time.Time, feed string, r Routes) (*Day, error) {
 	start, end := dayBounds(date)
-	files, err := archives(dir, start-runGapS, end)
+	// A crossing just before end needs the fix after it: read up to maxInterpS past end.
+	files, err := archives(dir, start-runGapS, end+maxInterpS)
 	if err != nil {
 		return nil, err
 	}

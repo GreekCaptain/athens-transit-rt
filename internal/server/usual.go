@@ -47,7 +47,7 @@ func (a *App) usualPasses(ctx context.Context) {
 
 // buildUsual builds the missing finished days of the training window. tried remembers, per
 // day, the GTFS version a build found no rows of, so a day without history is read once per
-// feed.
+// feed; a failed build is tried again at the next call.
 func (a *App) buildUsual(st *usual.Store, tried map[time.Time]string) {
 	w := a.world()
 	feed := worldVersion(w)
@@ -63,7 +63,6 @@ func (a *App) buildUsual(st *usual.Store, tried map[time.Time]string) {
 		if st.Has(d) || tried[d] == feed || now.Before(usual.DayEnd(d).Add(usualAfter)) {
 			continue
 		}
-		tried[d] = feed
 		if routes == nil {
 			routes = usual.FeedRoutes(w.feed)
 		}
@@ -78,10 +77,12 @@ func (a *App) buildUsual(st *usual.Store, tried map[time.Time]string) {
 			err = st.Load(d)
 		}
 		if err != nil {
-			a.log.Warn("usual passes", "day", d.Format(time.DateOnly), "err", err)
+			a.log.Warn("usual passes", "day", d.Format(time.DateOnly), "err", err) // retried next hour
 			continue
 		}
-		if day != nil {
+		if day == nil {
+			tried[d] = feed
+		} else {
 			a.log.Info("usual passes built", "day", d.Format(time.DateOnly), "passes", len(day.Passes),
 				"stops", len(day.Stops), "outages", len(day.Outages), "took", time.Since(start).Round(time.Millisecond))
 		}
