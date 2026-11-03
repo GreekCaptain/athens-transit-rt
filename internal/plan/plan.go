@@ -180,6 +180,12 @@ func (t *Timetable) buildRoutes(in *Input) {
 		}
 		groups[k] = append(groups[k], int32(i))
 	}
+	events := 0
+	for _, g := range groups {
+		events += len(g) * len(in.Trips[g[0]].Times)
+	}
+	t.arr, t.dep = make([]int32, 0, events), make([]int32, 0, events)
+	t.rTrips = make([]int32, 0, t.stats.Trips)
 	t.rStopAt, t.rTripAt, t.rTimeAt = []int32{0}, []int32{0}, []int32{0}
 	for _, k := range keys {
 		g := groups[k]
@@ -223,7 +229,6 @@ func (t *Timetable) buildRoutes(in *Input) {
 			t.rTimeAt = append(t.rTimeAt, int32(len(t.arr)))
 		}
 	}
-	t.arr, t.dep = slices.Clip(t.arr), slices.Clip(t.dep)
 }
 
 // overtakes reports whether trip a, leaving after b, is earlier than b at some Stop.

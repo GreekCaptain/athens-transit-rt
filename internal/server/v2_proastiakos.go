@@ -602,6 +602,12 @@ func (s *proastiakosAdapter) LineVehicles(id string, now time.Time) (*LineVehicl
 func (s *proastiakosAdapter) Run(id string, now time.Time) (*model.Run, error) {
 	x := s.index()
 	no, noon, ok := model.ParseRunID(subNS, id, gtfs.Athens)
+	if ok && !noon.Equal(noonOf(now)) {
+		// A run of a plan after midnight: the board is per calendar day (contract §9).
+		if run, found := s.a.plannedRun(id, now); found {
+			return run, nil
+		}
+	}
 	if !ok || !noon.Equal(noonOf(now)) {
 		return nil, errUnknown
 	}

@@ -9,6 +9,13 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
 ## Unreleased
 
 ### Live API
+- `GET /v2/plan` (contract rev 15): a trip planner for the app's evening section. From a point
+  to a point, the first `n` options after `after`, or with `last=true` the last `n` of the
+  service day: walks, one to four rides of any mode (bus, trolley, metro, tram, suburban) and the
+  walks between them, from the timetables the backend already holds (no new load on OASA, STASY
+  or railway.gov.gr). RAPTOR in process (`internal/plan`), rebuilt for each service day. Every
+  leg has a `shape`; every ride's `run` opens with `/v2/runs/{id}`, also after midnight until
+  03:00 ([#44](https://github.com/angelospk/athens-transit-rt/issues/44)).
 - While the GTFS is expired, a bus whose variant has no trip around now on today's weekday is
   matched against the trips of that variant on the nearest weekday that has some. OASA moved
   some variants to other weekdays since the 2026-07-08 feed (309Β runs 5863 on Tuesdays too):

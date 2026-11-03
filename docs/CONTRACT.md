@@ -796,7 +796,7 @@ Rules:
 
 ### 9. Trip planner `/v2/plan` (rev 15)
 
-Proposed for issue #44 (the app's evening section «Τελευταία για σπίτι»). Trips from a point to
+Implemented 2026-11-03 for issue #44 (PR #64; live once deployed), for the app's evening section «Τελευταία για σπίτι». Trips from a point to
 a point: a walk to a Stop, one to four rides of any Mode with walks between them, and a walk to
 the end. Design and limits: [superpowers/specs/2026-11-03-trip-planner.md](superpowers/specs/2026-11-03-trip-planner.md).
 
@@ -807,7 +807,7 @@ GET /v2/plan?from=37.97527,23.73552&to=37.87390,23.75400&after=1793227800&last=t
 | Parameter | Required | Meaning |
 |---|---|---|
 | `from`, `to` | yes | `lat,lon`, decimal degrees. Outside Attica (lat 37.6-38.4, lon 23.2-24.2): `400 outside_area`. |
-| `after` | no | Unix seconds; default now. No option leaves `from` before it. It must lie in the current service day (below), or at most 1 h before now: else `400 bad_after`. |
+| `after` | no | Unix seconds; default now. No option leaves `from` before it. It must lie before the end of the current service day (below), and in that day or at most 1 h before now: else `400 bad_after`. |
 | `last` | no | `true`: the last `n` options of the service day that leave at or after `after`. Default `false`: the first `n` options that leave at or after `after`. |
 | `n` | no | 1-5, default 3. |
 

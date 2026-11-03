@@ -529,6 +529,13 @@ func (o *oasaAdapter) Run(id string, now time.Time) (*model.Run, error) {
 func (o *oasaAdapter) dailyRun(f *gtfs.Feed, id, trip, hhmm string, day, now time.Time) (*model.Run, error) {
 	m, ok := dailyMinutes(hhmm)
 	ti := f.TripIndex(trip)
+	if ok && ti >= 0 && !day.Equal(gtfs.ServiceDay(now)) {
+		// After midnight the daily cache of the day may already hold the next day's runs: the
+		// planner's timetable keeps the service day's until 03:00 (contract §9).
+		if run, found := o.a.plannedRun(id, now); found {
+			return run, nil
+		}
+	}
 	if !ok || ti < 0 || !day.Equal(gtfs.ServiceDay(now)) {
 		return nil, errUnknown
 	}

@@ -127,6 +127,9 @@ type App struct {
 	suburban *rail.Suburban
 	trains   *rail.TrainStream // live Proastiakos positions, read only while clients ask
 
+	planner    *planner     // /v2/plan: the Timetable of the service day and the plan slots
+	prefetched atomic.Value // string: the date whose daily schedules the prefetch has fetched
+
 	alerts    *alerts.Poller // /v2/alerts, polled every 10 min
 	alertHTTP *http.Client   // the alert sources
 
@@ -197,6 +200,7 @@ func New(cfg Config, log *slog.Logger) *App {
 	a.trains = &rail.TrainStream{BaseURL: cfg.SuburbanURL, HTTP: &http.Client{Transport: stream}, Log: log,
 		Now: func() time.Time { return a.now() }}
 	a.adapters = []Adapter{&oasaAdapter{a}, &stasyAdapter{a: a}, &proastiakosAdapter{a: a, board: a.suburban, trains: a.trains}}
+	a.planner = newPlanner()
 	a.alertHTTP = &http.Client{Timeout: alertTimeout}
 	a.alerts = a.newAlertsPoller()
 	return a
@@ -633,6 +637,7 @@ func (a *App) Run(ctx context.Context) error {
 	go a.stasy.Run(ctx)
 	go a.trains.Run(ctx)
 	go a.alerts.Run(ctx)
+	go a.planLoop(ctx)
 	a.log.Info("listening", "addr", a.cfg.Listen, "metrics", a.cfg.MetricsListen, "rps", a.pacer.BaseRPS())
 	select {
 	case <-ctx.Done():

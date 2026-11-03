@@ -1,6 +1,6 @@
 # Trip planner `/v2/plan` (issue #44)
 
-Status: proposed (phase 1: contract + design). The client contract is
+Status: implemented (phase 2, PR #64; measured numbers at the end). The client contract is
 [CONTRACT.md §9](../../CONTRACT.md#9-trip-planner-v2plan-rev-15); this note is how the backend
 meets it and what it costs.
 
@@ -224,3 +224,37 @@ trip after 01:00.
 
 Benchmark: `BenchmarkBuild` and `BenchmarkPlan` on the GTFS snapshot plus the test STASY feed,
 heap measured with `runtime.ReadMemStats` before and after the build.
+
+## Measured (phase 2, 2026-11-03)
+
+On the mini PC, GTFS snapshot 2026-07-08 on Tue 2026-09-15 (inside its validity) plus the live
+STASY feed of the service's volume; no suburban board (none cached in the volume). Reproduce
+with `ATRT_PLAN_STATE=<state dir> go test -run TestPlanRealData -v ./internal/server/` and the
+benchmarks `BenchmarkPlanBuild`, `BenchmarkPlan`.
+
+| Check | Acceptance | Measured |
+|---|---|---|
+| Timetable | — | 8,211 stops, 16,667 trips, 464 routes, 692,476 stop events, 114,550 transfers |
+| Build | ≤ 2 s | 110 ms (first), 44 ms per build in the benchmark |
+| Steady heap growth | ≤ 20 MB | 13.5 MB |
+| Peak heap growth, a rebuild with 2 plans running (sampled every 10 ms) | ≤ 40 MB | 38 MB at `GOGC=25`; 61 MB at `GOGC=100`, garbage not yet collected included |
+| `last=false` latency, 300 random pairs | p95 ≤ 100 ms | p50 15 ms, p95 45 ms, max 61 ms |
+| `last=true` latency, 300 random pairs | p95 ≤ 150 ms | p50 1.4 ms, p95 7.5 ms, max 83 ms |
+| cgroup `memory.peak`, `MemoryMax=200M`, `GOMEMLIMIT=100MiB` | ≤ 160 MB | 137.9 MB with the planner (3 rebuilds while 2 plans ran, 902 plans in 20 s); 102.7 MB baseline, same state, no planner |
+
+The container check ran the service's code in a systemd scope (`TestPlanCgroupPeak`), not the
+image: live polling was off, because a second poller would add load on OASA, and the live GTFS is
+expired (on today's date the bus part needs daily schedules that only a polling instance caches).
+Live polling adds the same memory to both numbers; check `docker stats` on the production host
+after the deploy.
+
+Where the code differs from the text above:
+
+- Run ids are stored as strings for every trip (about 1 MB), not built on demand: simpler, and
+  `/v2/runs/{id}` looks them up after midnight.
+- A new service day is built at once after 03:00 when the OASA GTFS covers it (the daily
+  schedules are not needed then); on an expired GTFS it waits for the prefetch round or 04:30.
+- Suburban Runs of a plan also open after midnight from the planner's timetable (the board is per
+  calendar day), as contract §9 promises for every Run.
+- A rebuild for changed inputs waits 10 min, except when the STASY timetable or a new GTFS
+  appears (a build at start often runs before STASY has loaded).
