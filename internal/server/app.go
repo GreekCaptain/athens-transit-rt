@@ -716,28 +716,36 @@ func (a *App) housekeeping(ctx context.Context) {
 	}
 }
 
-// logStats writes one line a minute about the polling plan and its cost.
+// logStats writes one line a minute about the polling plan and its cost, and names the lines
+// whose buses all lack a trip (a timetable that no longer fits, rt#51).
 func (a *App) logStats() {
 	st := a.sched.Stats()
 	a.mu.RLock()
 	vehicles, matched := 0, 0
-	for _, d := range a.lines {
+	var unmatched []string // lines whose buses all lack a trip (rt#51)
+	for id, d := range a.lines {
 		if a.now().Sub(d.updated) > feedMaxAge {
 			continue
 		}
+		n := 0
 		for i := range d.results {
-			vehicles++
 			if d.results[i].Matched() {
-				matched++
+				n++
 			}
 		}
+		if len(d.results) > 0 && n == 0 {
+			unmatched = append(unmatched, id)
+		}
+		vehicles += len(d.results)
+		matched += n
 	}
 	a.mu.RUnlock()
+	sort.Strings(unmatched)
 	reqs := a.client.Requests()
 	a.log.Info("stats", "requests", reqs, "requests_last_min", reqs-a.lastRequests, "errors", a.client.Errors(),
 		"watched", st.LinesByTier[sched.Watched], "dense", st.LinesByTier[sched.Dense], "other", st.LinesByTier[sched.Other],
 		"stretch_other", fmt.Sprintf("%.2f", st.Stretch[sched.Other]), "rps_now", fmt.Sprintf("%.2f", a.pacer.RPS()),
-		"vehicles", vehicles, "matched", matched, "road_cells", a.roads.Cells())
+		"vehicles", vehicles, "matched", matched, "unmatched_lines", strings.Join(unmatched, ","), "road_cells", a.roads.Cells())
 	a.lastRequests = reqs
 }
 

@@ -49,10 +49,10 @@ type StraightLine struct {
 
 func (s StraightLine) Files() map[string]string {
 	var stops, st, trips, shapes strings.Builder
-	stops.WriteString("stop_id,stop_name,stop_lat,stop_lon\n")
+	stops.WriteString("stop_id,stop_code,stop_name,stop_lat,stop_lon\n")
 	shapes.WriteString("shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\n")
 	for i := 0; i < s.Stops; i++ {
-		fmt.Fprintf(&stops, "S%d,STOP %d,37.98,%.4f\n", i, i, 23.70+0.01*float64(i))
+		fmt.Fprintf(&stops, "S%d,1000%d,STOP %d,37.98,%.4f\n", i, i, i, 23.70+0.01*float64(i))
 		fmt.Fprintf(&shapes, "SH,37.98,%.4f,%d\n", 23.70+0.01*float64(i), i+1)
 	}
 	trips.WriteString("route_id,service_id,trip_id,trip_headsign,direction_id,shape_id\n")

@@ -413,6 +413,35 @@ func TestOASAOutageBackoffAndRecovery(t *testing.T) {
 	}
 }
 
+// The minute stats log names the lines whose buses all lack a trip (rt#51: 054 and 309Β on an
+// expired GTFS), so such a line shows up in the log without a person spotting it on the map.
+func TestStatsLogNamesUnmatchedLines(t *testing.T) {
+	a := newApp(t, monday1020)
+	var logs strings.Builder
+	a.log = slog.New(slog.NewTextHandler(&logs, nil))
+	unmatched := []match.Result{{VehicleID: "x", Trip: -1}, {VehicleID: "y", Trip: -1}}
+	a.mu.Lock()
+	a.lines["309Β"] = &lineData{updated: monday1020, results: unmatched[:1]}
+	a.lines["054"] = &lineData{updated: monday1020, results: unmatched}
+	a.lines["L"] = &lineData{updated: monday1020, results: []match.Result{{VehicleID: "a", Trip: 0}, {VehicleID: "b", Trip: -1}}}
+	a.lines["OLD"] = &lineData{updated: monday1020.Add(-feedMaxAge - time.Second), results: unmatched} // stale
+	a.lines["EMPTY"] = &lineData{updated: monday1020}                                                  // no bus
+	a.mu.Unlock()
+	a.logStats()
+	if !strings.Contains(logs.String(), " unmatched_lines=054,309Β") {
+		t.Fatalf("stats log: %s", logs.String())
+	}
+	logs.Reset()
+	a.mu.Lock()
+	delete(a.lines, "054")
+	delete(a.lines, "309Β")
+	a.mu.Unlock()
+	a.logStats()
+	if !strings.Contains(logs.String(), ` unmatched_lines=""`) {
+		t.Fatalf("no fully unmatched line: %s", logs.String())
+	}
+}
+
 // D3: after the static GTFS expires, lines are still polled (on the weekday pattern of the
 // feed's last valid week) and vehicles are served with position and route, unmatched.
 func TestExpiredGTFSStillServesVehicles(t *testing.T) {

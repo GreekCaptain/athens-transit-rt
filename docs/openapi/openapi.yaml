@@ -1766,7 +1766,7 @@ paths:
                     until: "2026-11-01"
                     modes: [bus]
                     lines: ["oasa:112"]
-                    stops: ["oasa:040054"]
+                    stops: ["oasa:40054"]
                     urgent: false
                 updated_at: 1793336580
         "429":

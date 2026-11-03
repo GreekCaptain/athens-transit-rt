@@ -145,11 +145,18 @@ func knownLine(code string) (string, string, bool) {
 	return "oasa:" + code, m, ok
 }
 
-func knownStop(code string) bool { return code == "040054" }
+// stopIDs maps a stop code to GTFS stop ids, like the 2026-07-08 OASA GTFS (code 040054 is
+// stop_id 40054).
+func stopIDs(code string) []string {
+	if code == "040054" {
+		return []string{"40054"}
+	}
+	return nil
+}
 
 func TestOASAItem(t *testing.T) {
 	items, _ := ParseFeed(read(t, "oasa-feed.xml"))
-	it, keep := OASAItem(items[1], read(t, "post-112.html"), knownLine, knownStop)
+	it, keep := OASAItem(items[1], read(t, "post-112.html"), knownLine, stopIDs)
 	if !keep {
 		t.Fatal("item 2 dropped")
 	}
@@ -157,28 +164,40 @@ func TestOASAItem(t *testing.T) {
 	want := Item{
 		ID: "oasa:14909", Source: "oasa", Title: items[1].Title, URL: items[1].Link,
 		Published: items[1].Published.Unix(), From: &from, Until: &until,
-		Modes: []string{"bus"}, Lines: []string{"oasa:112"}, Stops: []string{"oasa:040054"},
+		Modes: []string{"bus"}, Lines: []string{"oasa:112"}, Stops: []string{"oasa:40054"},
 	}
 	if !reflect.DeepEqual(it, want) {
 		t.Errorf("got  %+v\nwant %+v", it, want)
 	}
-	if _, keep := OASAItem(items[8], nil, knownLine, knownStop); keep {
+	// A code of a temporary stop the GTFS lacks (999999) stays out, without error; a code
+	// shared by two stops gives both; a Stop named twice is listed once.
+	shared := func(code string) []string {
+		if code == "01" {
+			return []string{"10152", "230021"}
+		}
+		return stopIDs(code)
+	}
+	page := []byte(`<html><body><article><p>Νέα στάση ΚΣ 999999, κατάργηση ΚΣ 040054 και ΚΣ 01, ξανά ΚΣ 040054.</p></article></body></html>`)
+	if it, _ := OASAItem(items[1], page, knownLine, shared); !reflect.DeepEqual(it.Stops, []string{"oasa:40054", "oasa:10152", "oasa:230021"}) {
+		t.Errorf("stops %v", it.Stops)
+	}
+	if _, keep := OASAItem(items[8], nil, knownLine, stopIDs); keep {
 		t.Error("a tender (Διαγωνισμοί) must be dropped")
 	}
 	// No article (fetch failed): kept, without dates or stops.
-	it, keep = OASAItem(items[4], nil, knownLine, knownStop)
+	it, keep = OASAItem(items[4], nil, knownLine, stopIDs)
 	if !keep || it.From != nil || it.Until != nil || !reflect.DeepEqual(it.Lines, []string{"oasa:046"}) || len(it.Stops) != 0 {
 		t.Errorf("no article: %+v %v", it, keep)
 	}
 	// Network-wide notice: no lines, both road modes.
-	it, _ = OASAItem(items[7], nil, knownLine, knownStop)
+	it, _ = OASAItem(items[7], nil, knownLine, stopIDs)
 	if len(it.Lines) != 0 || !reflect.DeepEqual(it.Modes, []string{"bus", "trolley"}) {
 		t.Errorf("network-wide: %+v", it)
 	}
 	// Unknown line codes are dropped; a trolley line adds the trolley mode.
 	fi := items[1]
 	fi.Title = "Τροποποίηση των γραμμών 112, 999 και 10"
-	it, _ = OASAItem(fi, nil, knownLine, knownStop)
+	it, _ = OASAItem(fi, nil, knownLine, stopIDs)
 	if !reflect.DeepEqual(it.Lines, []string{"oasa:112", "oasa:10"}) || !reflect.DeepEqual(it.Modes, []string{"bus", "trolley"}) {
 		t.Errorf("mixed: %+v", it)
 	}
@@ -205,7 +224,7 @@ func TestPoller(t *testing.T) {
 			}
 			return nil, errors.New("404")
 		},
-		KnownLine: knownLine, KnownStop: knownStop,
+		KnownLine: knownLine, StopIDs: stopIDs,
 		Now: func() time.Time { return now },
 	}
 	if items, updated := p.Snapshot(); updated != 0 || len(items) != 0 {
