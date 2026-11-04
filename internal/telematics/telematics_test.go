@@ -26,6 +26,9 @@ func TestParseCSDate(t *testing.T) {
 		"Jan 1 2026 12:00:01:000AM":   "2026-01-01 00:00:01",
 		"Jan 1 2026 12:30:00:000PM":   "2026-01-01 12:30:00",
 		" Dec 31 2026 9:05:00:123 PM": "2026-12-31 21:05:00",
+		// OASA's format since 2026-11-04 ~10:08 UTC (Athens local time, as before).
+		"2026-11-04 14:35:30.000": "2026-11-04 14:35:30",
+		"2026-11-04 00:05:09":     "2026-11-04 00:05:09",
 	}
 	for in, want := range cases {
 		got, err := ParseCSDate(in)
@@ -36,8 +39,10 @@ func TestParseCSDate(t *testing.T) {
 			t.Errorf("%q -> %v, want %s Athens", in, got, want)
 		}
 	}
-	if _, err := ParseCSDate("yesterday"); err == nil {
-		t.Error("garbage accepted")
+	for _, bad := range []string{"yesterday", "2026-13-04 14:35:30.000", "2026-11-04"} {
+		if _, err := ParseCSDate(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
 	}
 }
 

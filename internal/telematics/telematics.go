@@ -35,9 +35,14 @@ var months = map[string]time.Month{"Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May"
 // e.g. "Oct  4 2026 10:15:38:000PM"
 var csDate = regexp.MustCompile(`^(\w{3})\s+(\d{1,2})\s+(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2}):\d+\s*([AP]M)`)
 
-// ParseCSDate parses the vehicle timestamp format of getBusLocation (Athens local time).
+// ParseCSDate parses the vehicle timestamp of getBusLocation (Athens local time): the old
+// "Oct  4 2026 10:15:38:000PM" and, since 2026-11-04, "2026-11-04 14:35:30.000".
 func ParseCSDate(v string) (time.Time, error) {
-	m := csDate.FindStringSubmatch(strings.TrimSpace(v))
+	v = strings.TrimSpace(v)
+	if t, err := time.ParseInLocation("2006-01-02 15:04:05.999", v, gtfs.Athens); err == nil {
+		return t.Truncate(time.Second), nil
+	}
+	m := csDate.FindStringSubmatch(v)
 	if m == nil {
 		return time.Time{}, fmt.Errorf("unrecognised CS_DATE %q", v)
 	}
