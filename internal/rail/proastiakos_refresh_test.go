@@ -104,8 +104,8 @@ func TestSuburbanStaleStationsRefreshInBackground(t *testing.T) {
 	}
 }
 
-// A refresh of yesterday's board that waited behind the first fetch of today does not download
-// yesterday again: that would drop today's board.
+// A refresh of yesterday's board that waited behind the first fetch of today does not drop
+// today's board: after midnight both are read (#84).
 func TestSuburbanRefreshAfterMidnightKeepsToday(t *testing.T) {
 	s, clk, f := newTestSuburban(t)
 	if _, ok := s.Departures(context.Background(), "ST-PIR", 10, clk.now()); !ok {
@@ -137,8 +137,11 @@ func TestSuburbanRefreshAfterMidnightKeepsToday(t *testing.T) {
 	if _, _, ok := s.CachedBoard(tomorrow); !ok {
 		t.Fatal("tomorrow's board was dropped")
 	}
-	if n := f.count("/api/public/schedule-board"); n != 2 {
-		t.Fatalf("board fetched %d times, want 2", n)
+	if _, _, ok := s.CachedBoard(clk.now()); !ok {
+		t.Fatal("yesterday's board was dropped")
+	}
+	if n := f.count("/api/public/schedule-board"); n != 3 {
+		t.Fatalf("board fetched %d times, want 3", n)
 	}
 }
 

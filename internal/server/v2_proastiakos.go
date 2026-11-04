@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -361,12 +362,7 @@ func (s *proastiakosAdapter) Arrivals(ctx context.Context, stopID string, now ti
 		return nil, errUnknown
 	}
 	s.board.Stations(ctx) // the alias table; the board answers without it
-	list, at, ok := s.board.Board(ctx, now)
 	live := liveTrains(s.trains.Vehicles(), now)
-	if !ok {
-		return []model.Arrival{}, nil
-	}
-	fresh := now.Sub(at) <= subBoardFresh
 	here := map[string]bool{}
 	isHere := func(id string) bool {
 		v, seen := here[id]
@@ -379,6 +375,33 @@ func (s *proastiakosAdapter) Arrivals(ctx context.Context, stopID string, now ti
 	}
 	until := now.Add(v2Horizon)
 	var out []model.Arrival
+	for _, day := range subDays(now) {
+		list, at, ok := s.board.Board(ctx, day)
+		if !ok {
+			continue
+		}
+		out = s.dayArrivals(x, list, day, now.Sub(at) <= subBoardFresh, live, isHere, stopID, now, until, out)
+	}
+	return cutArrivals(out), nil
+}
+
+// subDays are the board days whose runs can be under way or due from now: the board day, and from
+// 00:00 to 03:00 also the day to come (its first runs are on its own board). Each is its noon.
+func subDays(now time.Time) []time.Time {
+	day, cal := rail.SuburbanDay(now), noonOf(now)
+	if cal.Equal(day) {
+		return []time.Time{day}
+	}
+	return []time.Time{day, cal}
+}
+
+// dayArrivals adds to out the arrivals at a Stop of one board day's runs (Arrivals). Live delays
+// are of that day's runs only: a train number repeats every day.
+func (s *proastiakosAdapter) dayArrivals(x *subIndex, list []rail.SuburbanSchedule, day time.Time, fresh bool,
+	live map[string]*rail.SuburbanTrain, isHere func(string) bool, stopID string, now, until time.Time, out []model.Arrival) []model.Arrival {
+	if !day.Equal(rail.SuburbanDay(now)) {
+		live = nil
+	}
 	for i := range list {
 		sc := &list[i]
 		if sc.Status == "cancelled" {
@@ -413,7 +436,7 @@ func (s *proastiakosAdapter) Arrivals(ctx context.Context, stopID string, now ti
 			}
 			ar := model.Arrival{Line: x.lines[c].ID, Stop: stopID, Headsign: sc.Destination, At: t.Unix(),
 				ScheduledAt: model.Ptr(sched.Unix()), DelayS: delayS, Source: model.SourceTable,
-				Run: model.Ptr(subRunID(sc.Train, rail.SuburbanDay(now))), Platform: st.Platform, Status: model.StatusOf(isLive, delayS)}
+				Run: model.Ptr(subRunID(sc.Train, day)), Platform: st.Platform, Status: model.StatusOf(isLive, delayS)}
 			if isLive {
 				ar.Source = model.SourceLive
 			}
@@ -424,7 +447,7 @@ func (s *proastiakosAdapter) Arrivals(ctx context.Context, stopID string, now ti
 			break
 		}
 	}
-	return cutArrivals(out), nil
+	return out
 }
 
 // Vehicles are the stream's trains of the three corridors (freight left out), at their GPS
@@ -603,17 +626,17 @@ func (s *proastiakosAdapter) LineVehicles(id string, now time.Time) (*LineVehicl
 func (s *proastiakosAdapter) Run(id string, now time.Time) (*model.Run, error) {
 	x := s.index()
 	no, noon, ok := model.ParseRunID(subNS, id, gtfs.Athens)
-	day := rail.SuburbanDay(now)
-	if ok && !noon.Equal(day) {
-		// A run of a plan after midnight: the board is per calendar day (contract §9).
+	known := ok && slices.ContainsFunc(subDays(now), noon.Equal)
+	if ok && !known {
+		// A run of a plan of another day (contract §9).
 		if run, found := s.a.plannedRun(id, now); found {
 			return run, nil
 		}
 	}
-	if !ok || !noon.Equal(day) {
+	if !known {
 		return nil, errUnknown
 	}
-	list, at, ok := s.board.Board(context.Background(), now)
+	list, at, ok := s.board.Board(context.Background(), noon)
 	if !ok {
 		return nil, errWarming
 	}
@@ -630,7 +653,10 @@ func (s *proastiakosAdapter) Run(id string, now time.Time) (*model.Run, error) {
 	if sc == nil {
 		return nil, errUnknown
 	}
-	tr := liveTrains(s.trains.Peek(), now)[no]
+	var tr *rail.SuburbanTrain
+	if noon.Equal(rail.SuburbanDay(now)) { // a train number repeats every day: the live one is of the board day
+		tr = liveTrains(s.trains.Peek(), now)[no]
+	}
 	fresh := now.Sub(at) <= subBoardFresh
 	run := &model.Run{ID: id, Line: x.lines[c].ID, Headsign: sc.Destination, Stops: []model.RunStop{}}
 	for j := range sc.Stops {
