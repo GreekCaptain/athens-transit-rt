@@ -42,6 +42,10 @@ func (f *oasthFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if r.URL.Query().Get("act") == "webGetLangs" {
+		if r.Header.Get("Referer") == "" { // the live API (2026-11-04) refuses a session without it
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		f.sessions++
 		f.valid = "s" + string(rune('0'+f.sessions))
 		http.SetCookie(w, &http.Cookie{Name: "PHPSESSID", Value: f.valid, Path: "/"})
@@ -142,5 +146,32 @@ func TestGTFSStopIDsAndTrimmedLineIDs(t *testing.T) {
 	if err != nil || len(st) != 2 || st[0].StopCode != "11048" || st[0].ArrivalCode != "4483" ||
 		st[1].StopCode != "11046" || st[1].ArrivalCode != "4579" || st[0].Order != 1 {
 		t.Fatalf("OASTH stops %+v %v", st, err)
+	}
+}
+
+// A wrong salt makes every call fail with 401. A new session per call would double the load on
+// OASTH for as long as that lasts: after two refused sessions in a row, at most one a minute.
+func TestOASTHRefusedSessionsBackOff(t *testing.T) {
+	now := time.Date(2026, 11, 4, 20, 26, 0, 0, gtfs.Athens)
+	fake := &oasthFake{salt: "the-real-salt", now: now}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	c := New(srv.URL+"/api/", nil)
+	auth := NewOASTHAuth(srv.URL+"/api/", "a-wrong-salt", c.HTTP)
+	auth.Now = func() time.Time { return now }
+	c.Auth = auth
+	ctx := context.Background()
+	for i := 0; i < 5; i++ {
+		if _, err := c.BusLocations(ctx, "2680"); err == nil {
+			t.Fatalf("call %d worked with a wrong salt", i)
+		}
+	}
+	if fake.sessions != 2 {
+		t.Fatalf("%d sessions for 5 refused calls, want 2", fake.sessions)
+	}
+	now = now.Add(61 * time.Second)
+	c.BusLocations(ctx, "2680")
+	if fake.sessions != 3 {
+		t.Fatalf("%d sessions a minute later, want 3", fake.sessions)
 	}
 }

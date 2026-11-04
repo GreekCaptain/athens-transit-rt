@@ -177,8 +177,8 @@ func viewTiles(s *vehiclesSnapshot, lat, lon, w, h float64, zoom int) (n, vehicl
 	if zoom >= 13 {
 		z = tileDetailZ
 	}
-	x0, y0 := tileOf(min(lat+dLat, tileBox.north), max(lon-dLon, tileBox.west), z)
-	x1, y1 := tileOf(max(lat-dLat, tileBox.south), min(lon+dLon, tileBox.east), z)
+	x0, y0 := tileOf(min(lat+dLat, tileBox.North), max(lon-dLon, tileBox.West), z)
+	x1, y1 := tileOf(max(lat-dLat, tileBox.South), min(lon+dLon, tileBox.East), z)
 	for x := x0; x <= x1; x++ {
 		for y := y0; y <= y1; y++ {
 			e := s.tiles[tileKey{z, x, y}]

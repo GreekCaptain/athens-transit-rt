@@ -35,7 +35,23 @@ func serve(args []string) error {
 	hist := fs.Bool("history", false, "keep every new GPS fix in <state>/history (hourly CSV, gzipped)")
 	histMB := fs.Int64("history-max-mb", 500, "fix history: delete the oldest hours above this size")
 	histDays := fs.Int("history-days", 30, "fix history: delete hours older than this")
+	cityID := fs.String("city", "athens", "athens or thessaloniki")
 	fs.Parse(args)
+
+	city, err := server.CityByID(*cityID)
+	if err != nil {
+		return fmt.Errorf("bad --city: %w", err)
+	}
+	var salt string
+	if city.ID == "thessaloniki" {
+		// The API token's salt is a secret, so it comes from the environment, not a flag.
+		if salt = os.Getenv("OASTH_TOKEN_SALT"); salt == "" {
+			return fmt.Errorf("thessaloniki needs OASTH_TOKEN_SALT")
+		}
+		if *gtfsZip == "" {
+			return fmt.Errorf("thessaloniki has no snapshot release yet: pass --gtfs <OSETH GTFS zip>")
+		}
+	}
 
 	kind, ok := match.ParseKind(*matcher)
 	if !ok {
@@ -58,13 +74,14 @@ func serve(args []string) error {
 		}
 		histBytes = *histMB << 20
 	}
+	server.UseCityGlobals(city)
 	app := server.New(server.Config{Listen: *listen, MetricsListen: *metricsListen, StateDir: *state, RPS: *rps, Matcher: kind,
-		ReleaseURL: *releaseURL, GTFSZip: *gtfsZip, TelematicsURL: *telURL, Proxy: *proxy, ReleaseCheck: *check, HistoryMaxBytes: histBytes,
+		ReleaseURL: *releaseURL, GTFSZip: *gtfsZip, TelematicsURL: *telURL, City: city.ID, OASTHSalt: salt, Proxy: *proxy, ReleaseCheck: *check, HistoryMaxBytes: histBytes,
 		STASYURL: *stasyURL, SuburbanURL: *suburbanURL, MPassURL: *mpassURL,
 		Sched: sched.DefaultConfig(), HistoryKeep: time.Duration(*histDays) * 24 * time.Hour}, log)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err := app.Run(ctx)
+	err = app.Run(ctx)
 	if ctx.Err() != nil {
 		return nil
 	}

@@ -50,7 +50,9 @@ type Config struct {
 	Matcher       match.Kind
 	ReleaseURL    string        // snapshot release base URL ("" = release.DefaultBaseURL)
 	GTFSZip       string        // load this zip instead of the release snapshot (local use)
-	TelematicsURL string        // "" = telematics.BaseURL
+	TelematicsURL string        // "" = the city's telematics API
+	City          string        // "athens" or "thessaloniki" ("" = athens)
+	OASTHSalt     string        // secret of the OASTH API token (Thessaloniki); never logged
 	STASYURL      string        // STASY timetable catalogue ("" = rail.DefaultSTASYCatalog)
 	SuburbanURL   string        // railway.gov.gr base URL ("" = rail.DefaultRailwayURL)
 	MPassURL      string        // ose.mpass.ltd API base URL ("" = rail.DefaultMPassURL)
@@ -95,6 +97,7 @@ type App struct {
 	sched  *sched.Scheduler
 	meta   *meta.Store
 	fetch  *release.Fetcher
+	city   City
 
 	matchMu sync.Mutex // serialises matching (matchers are not concurrency-safe) and motion
 	motion  *motion
@@ -176,7 +179,22 @@ func New(cfg Config, log *slog.Logger) *App {
 	a.motion = newMotion(a.roads)
 	a.pacer = telematics.NewPacer(cfg.RPS)
 	a.pacer.Log = log
-	a.client = telematics.New(cfg.TelematicsURL, nil) // the scheduler paces every request
+	c, err := CityByID(cfg.City)
+	if err != nil {
+		log.Error("unknown city, serving Athens", "err", err)
+		c, _ = CityByID("athens")
+	}
+	a.city = c
+	tURL := cfg.TelematicsURL
+	if tURL == "" {
+		tURL = c.TelematicsURL
+	}
+	a.client = telematics.New(tURL, nil) // the scheduler paces every request
+	a.client.GTFSStopIDs = c.GTFSStopIDs
+	if c.ID == "thessaloniki" {
+		// The same http.Client, so the proxy set below applies to the session requests too.
+		a.client.Auth = telematics.NewOASTHAuth(tURL, cfg.OASTHSalt, a.client.HTTP)
+	}
 	a.client.MinGap = a.pacer.BaseInterval()
 	a.client.Stopped = a.pacer.Stopped
 	if cfg.Proxy != "" {
@@ -212,7 +230,10 @@ func New(cfg Config, log *slog.Logger) *App {
 	stream.ResponseHeaderTimeout = 15 * time.Second
 	a.trains = &rail.TrainStream{BaseURL: cfg.SuburbanURL, HTTP: &http.Client{Transport: stream}, Log: log,
 		Now: func() time.Time { return a.now() }}
-	a.adapters = []Adapter{&oasaAdapter{a}, &stasyAdapter{a: a}, &proastiakosAdapter{a: a, board: a.suburban, trains: a.trains}}
+	a.adapters = []Adapter{&oasaAdapter{a}}
+	if a.rail() {
+		a.adapters = append(a.adapters, &stasyAdapter{a: a}, &proastiakosAdapter{a: a, board: a.suburban, trains: a.trains})
+	}
 	a.planner = newPlanner()
 	a.alertHTTP = &http.Client{Timeout: alertTimeout}
 	a.alerts = a.newAlertsPoller()
@@ -220,8 +241,15 @@ func New(cfg Config, log *slog.Logger) *App {
 	return a
 }
 
+// rail reports whether the city has the Athens-only layers (STASY, Proastiakos, alerts, municipal).
+func (a *App) rail() bool { return a.city.Rail }
+
 // SetFeed installs a static feed (new matcher state; published results stay until replaced).
 func (a *App) SetFeed(f *gtfs.Feed, m *release.Manifest) {
+	if !a.rail() {
+		// Before the mapper: it reads line numbers and route codes from the store.
+		a.meta.SetLineAlias(lineAlias(f.Lines()))
+	}
 	mapper := match.NewRouteMapper(f, a.meta.Stops)
 	w := &world{feed: f, manifest: m, mapper: mapper, matcher: match.New(f, mapper, a.cfg.Matcher), stopLines: stopLines(f)}
 	a.matchMu.Lock()
@@ -656,11 +684,15 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	go a.sched.Run(ctx)
 	go a.housekeeping(ctx)
-	go a.stasy.Run(ctx)
-	go a.trains.Run(ctx)
-	go a.alerts.Run(ctx)
+	if a.rail() {
+		go a.stasy.Run(ctx)
+		go a.trains.Run(ctx)
+		go a.alerts.Run(ctx)
+	}
 	go a.planLoop(ctx)
-	go a.municipal.Run(ctx)
+	if a.rail() {
+		go a.municipal.Run(ctx)
+	}
 	a.log.Info("listening", "addr", a.cfg.Listen, "metrics", a.cfg.MetricsListen, "rps", a.pacer.BaseRPS())
 	select {
 	case <-ctx.Done():
