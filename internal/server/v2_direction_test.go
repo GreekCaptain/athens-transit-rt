@@ -126,3 +126,48 @@ func TestV2OASAVehicleDirection(t *testing.T) {
 		}
 	}
 }
+
+// A publish keeps the shape directions of its own feed (rt#70), so a bus going the other way
+// says 1 on both vehicle endpoints, and still says 1 after a feed swap until its line polls again.
+func TestV2OASAVehicleEndpointsDirection(t *testing.T) {
+	a := oasaOnly(newApp(t, monday1020))
+	poll(a, monday1020)
+	if d, w := a.lines["L"], a.world(); d.dirs == nil || fmt.Sprint(d.dirs) != fmt.Sprint(w.shapeDirs("L")) {
+		t.Fatalf("published dirs %v, want %v", d.dirs, w.shapeDirs("L"))
+	}
+
+	f := twoWayFeed(t)
+	a.SetFeed(f, nil)
+	back := int32(-1)
+	for _, ti := range f.TripsForLine("40") {
+		if f.Shapes[f.Trip(ti).Shape].ID == "BACK" {
+			back = ti
+			break
+		}
+	}
+	at := monday1020.Unix()
+	a.mu.Lock()
+	a.known["40"] = true
+	a.lines["40"] = &lineData{updated: monday1020, feed: f, dirs: a.w.shapeDirs("40"),
+		results:  []match.Result{{VehicleID: "b", Line: "40", Trip: back, Time: monday1020}},
+		vehicles: []Vehicle{{ID: "b", Lat: 37.98, Lon: 23.65, PositionAt: at}}, board: []boardPos{{}}}
+	a.mu.Unlock()
+	o := &oasaAdapter{a}
+	check := func(when string, all bool) {
+		t.Helper()
+		lv, err := o.LineVehicles("oasa:40", monday1020)
+		if err != nil || len(lv.Vehicles) != 1 || lv.Vehicles[0].Direction == nil || *lv.Vehicles[0].Direction != 1 {
+			t.Errorf("%s: line vehicles %v %s", when, err, asJSON(lv))
+		}
+		if !all {
+			return
+		}
+		vs, err := o.Vehicles(monday1020)
+		if err != nil || len(vs) != 1 || vs[0].Direction == nil || *vs[0].Direction != 1 {
+			t.Errorf("%s: vehicles %v %s", when, err, asJSON(vs))
+		}
+	}
+	check("same feed", true)
+	a.SetFeed(twoWayFeed(t), nil) // same content, a new feed: the line's data is from the old one
+	check("after a feed swap", false)
+}
