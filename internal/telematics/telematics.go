@@ -95,6 +95,7 @@ type RouteStop struct {
 	StopCode, StopDescr string
 	StopLat, StopLng    float64
 	Order               int
+	ArrivalCode         string // the code getStopArrivals wants; "" = same as StopCode
 }
 
 // Vehicle is one getBusLocation row.
@@ -114,17 +115,19 @@ type Arrival struct {
 
 // Client calls the API. With a non-nil Pacer every call waits for its slot first.
 type Client struct {
-	BaseURL   string
-	HTTP      *http.Client
-	Pacer     *Pacer
-	Log       RequestLog    // every request, per second
-	MinGap    time.Duration // never start two sends closer than this, nor write two requests closer than MinGap/4 (0 = no limit)
-	Stopped   func() bool   // true = send nothing, fail with ErrStopped (Pacer.Stopped; nil = never)
-	gapMu     chan struct{} // 1-slot lock that a waiter can abandon on cancel
-	lastAt    time.Time     // start of the last send, guarded by gapMu
-	lastWrite time.Time     // end of the last request write, guarded by gapMu
-	requests  atomic.Int64
-	errors    atomic.Int64
+	BaseURL     string
+	HTTP        *http.Client
+	Pacer       *Pacer
+	Auth        Auth          // adds a session and headers to every request (nil = none)
+	GTFSStopIDs bool          // see Stops
+	Log         RequestLog    // every request, per second
+	MinGap      time.Duration // never start two sends closer than this, nor write two requests closer than MinGap/4 (0 = no limit)
+	Stopped     func() bool   // true = send nothing, fail with ErrStopped (Pacer.Stopped; nil = never)
+	gapMu       chan struct{} // 1-slot lock that a waiter can abandon on cancel
+	lastAt      time.Time     // start of the last send, guarded by gapMu
+	lastWrite   time.Time     // end of the last request write, guarded by gapMu
+	requests    atomic.Int64
+	errors      atomic.Int64
 }
 
 func New(baseURL string, pacer *Pacer) *Client {
@@ -238,12 +241,20 @@ func (c *Client) do(ctx context.Context, out any, act, u string) error {
 		return err
 	}
 	req.Header.Set("User-Agent", UserAgent)
+	if c.Auth != nil {
+		if err := c.Auth.Apply(ctx, req); err != nil {
+			return fmt.Errorf("%s: %w", act, err)
+		}
+	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s: %w", act, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusUnauthorized && c.Auth != nil {
+			c.Auth.Reject(req) // the next call starts a new session; this one is not retried (one request per slot)
+		}
 		return &HTTPError{Act: act, Status: resp.StatusCode} // before the body: a refusal must stay visible
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
@@ -285,7 +296,7 @@ func (c *Client) Lines(ctx context.Context) ([]Line, error) {
 	}
 	out := make([]Line, len(raw))
 	for i, r := range raw {
-		out[i] = Line{string(r.LineCode), string(r.LineID), string(r.LineDescr), string(r.LineDescrEng)}
+		out[i] = Line{string(r.LineCode), strings.TrimSpace(string(r.LineID)), string(r.LineDescr), string(r.LineDescrEng)}
 	}
 	return out, nil
 }
@@ -302,8 +313,11 @@ func (c *Client) Routes(ctx context.Context, lineCode string) ([]Route, error) {
 	return out, nil
 }
 
+// Stops returns a route's stops. OASTH's GTFS stop_id is its StopID, so with GTFSStopIDs the
+// StopCode of a result is the API's StopID and the API's StopCode (what getStopArrivals
+// wants) is in ArrivalCode.
 func (c *Client) Stops(ctx context.Context, routeCode string) ([]RouteStop, error) {
-	var raw []struct{ StopCode, StopDescr, StopLat, StopLng, RouteStopOrder str }
+	var raw []struct{ StopCode, StopID, StopDescr, StopLat, StopLng, RouteStopOrder str }
 	if err := c.Call(ctx, &raw, "webGetStops", routeCode); err != nil {
 		return nil, err
 	}
@@ -312,7 +326,10 @@ func (c *Client) Stops(ctx context.Context, routeCode string) ([]RouteStop, erro
 		lat, _ := strconv.ParseFloat(string(r.StopLat), 64)
 		lon, _ := strconv.ParseFloat(string(r.StopLng), 64)
 		order, _ := strconv.Atoi(string(r.RouteStopOrder))
-		out[i] = RouteStop{string(r.StopCode), string(r.StopDescr), lat, lon, order}
+		out[i] = RouteStop{StopCode: string(r.StopCode), StopDescr: string(r.StopDescr), StopLat: lat, StopLng: lon, Order: order}
+		if c.GTFSStopIDs {
+			out[i].StopCode, out[i].ArrivalCode = string(r.StopID), string(r.StopCode)
+		}
 	}
 	return out, nil
 }

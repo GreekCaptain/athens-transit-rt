@@ -50,7 +50,7 @@ type ScheduleDeparture struct {
 
 // GET /v1/lines/{id}/schedule?date=YYYY-MM-DD: the timetable of a line, today by default.
 func (a *App) handleSchedule(w http.ResponseWriter, r *http.Request) {
-	line := CanonicalLine(r.PathValue("id"))
+	line := a.canonLine(r.PathValue("id"))
 	a.mu.RLock()
 	known := a.known[line]
 	a.mu.RUnlock()

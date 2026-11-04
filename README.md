@@ -168,6 +168,18 @@ atrt replay  --blocks data/record.sqlite   # check GTFS vehicle blocks
 Python matchers on recorded cycles; `internal/match/parity_test.go` checks that the Go
 matchers give the same assignments.
 
+### Thessaloniki
+
+`atrt serve --city thessaloniki` serves the OASTH buses (telematics.oasth.gr). The API wants a
+daily token, built from a secret salt that is not in this repo: put it in the `OASTH_TOKEN_SALT`
+environment variable. There is no snapshot release for Thessaloniki yet, so pass the OSETH GTFS
+zip from data.gov.gr with `--gtfs`. Start with `--rps 1`. Metro, trains, alerts and the municipal
+layer are Athens only and stay off.
+
+```bash
+OASTH_TOKEN_SALT=... atrt serve --city thessaloniki --gtfs oseth_gtfs.zip --state ./state-thess --rps 1
+```
+
 ### Local metrics
 
 `GET http://127.0.0.1:8096/metrics` (loopback only, not behind the tunnel) returns JSON: OASA

@@ -29,6 +29,9 @@ type Data struct {
 	Lines     []telematics.Line             `json:"lines"`
 	Routes    map[string][]telematics.Route `json:"routes"` // by LineCode
 	Stops     map[string][]string           `json:"stops"`  // by RouteCode
+	// ArrivalCodes maps a stop key to the code getStopArrivals wants, for APIs that key stops
+	// differently from the GTFS (OASTH); empty for OASA.
+	ArrivalCodes map[string]string `json:"arrival_codes,omitempty"`
 }
 
 // API is the part of the telematics client the store uses.
@@ -49,6 +52,7 @@ type Store struct {
 	now    func() time.Time
 
 	mu         sync.Mutex
+	alias      func(string) string // line number rename (nil = none)
 	data       Data
 	refreshing bool
 	next       *Data // refresh in progress
@@ -64,12 +68,16 @@ type Store struct {
 func Open(path string, api API, submit Submitter, onChange func()) *Store {
 	s := &Store{path: path, api: api, submit: submit, now: time.Now, onChange: onChange,
 		stopsAsked: map[string]time.Time{}}
-	s.data = Data{Routes: map[string][]telematics.Route{}, Stops: map[string][]string{}}
+	s.data = Data{Routes: map[string][]telematics.Route{}, Stops: map[string][]string{},
+		ArrivalCodes: map[string]string{}}
 	if b, err := os.ReadFile(path); err == nil {
 		var d Data
 		if json.Unmarshal(b, &d) == nil && d.Routes != nil {
 			if d.Stops == nil {
 				d.Stops = map[string][]string{}
+			}
+			if d.ArrivalCodes == nil {
+				d.ArrivalCodes = map[string]string{}
 			}
 			for rc, st := range d.Stops {
 				if len(st) == 0 {
@@ -80,6 +88,32 @@ func Open(path string, api API, submit Submitter, onChange func()) *Store {
 		}
 	}
 	return s
+}
+
+// SetLineAlias renames telematics line numbers as the store hands them out (nil = no rename).
+// Thessaloniki's telematics spells lines with Latin letters where the GTFS uses Greek ones.
+func (s *Store) SetLineAlias(f func(string) string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.alias = f
+}
+
+func (s *Store) aliasLocked(id string) string {
+	if s.alias == nil {
+		return id
+	}
+	return s.alias(id)
+}
+
+// ArrivalCode is the code getStopArrivals wants for a stop key, and whether a route's stop list
+// gave it. Unknown: the stop itself and false (right for OASA, whose codes are the GTFS ids).
+func (s *Store) ArrivalCode(stop string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c := s.data.ArrivalCodes[stop]; c != "" {
+		return c, true
+	}
+	return stop, false
 }
 
 // LineRoutes maps a line number (LineID) to its route codes, each with its LineCode.
@@ -93,7 +127,8 @@ func (s *Store) LineRoutes() LineRoutes {
 	out := LineRoutes{}
 	for _, l := range s.data.Lines {
 		for _, r := range s.data.Routes[l.LineCode] {
-			out[l.LineID] = append(out[l.LineID], RouteRef{r.RouteCode, l.LineCode})
+			id := s.aliasLocked(l.LineID)
+			out[id] = append(out[id], RouteRef{r.RouteCode, l.LineCode})
 		}
 	}
 	for _, refs := range out {
@@ -110,7 +145,7 @@ func (s *Store) LineCodes(lineID string) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, l := range s.data.Lines {
-		if l.LineID == lineID && l.LineCode != "" && !seen[l.LineCode] {
+		if s.aliasLocked(l.LineID) == lineID && l.LineCode != "" && !seen[l.LineCode] {
 			seen[l.LineCode] = true
 			out = append(out, l.LineCode)
 		}
@@ -125,9 +160,9 @@ func (s *Store) LineIDs() []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, l := range s.data.Lines {
-		if !seen[l.LineID] {
-			seen[l.LineID] = true
-			out = append(out, l.LineID)
+		if id := s.aliasLocked(l.LineID); !seen[id] {
+			seen[id] = true
+			out = append(out, id)
 		}
 	}
 	return out
@@ -160,6 +195,9 @@ func (s *Store) Stops(routeCode string) ([]string, bool) {
 			codes := make([]string, len(stops))
 			for i, st := range stops {
 				codes[i] = st.StopCode
+				if st.ArrivalCode != "" {
+					s.data.ArrivalCodes[st.StopCode] = st.ArrivalCode
+				}
 			}
 			s.data.Stops[routeCode] = codes
 			s.saveLocked()
@@ -236,7 +274,7 @@ func (s *Store) Refresh() {
 		for k, v := range s.data.Routes {
 			routes[k] = v
 		}
-		s.next = &Data{FetchedAt: s.data.FetchedAt, Lines: s.data.Lines, Routes: routes, Stops: s.data.Stops}
+		s.next = &Data{FetchedAt: s.data.FetchedAt, Lines: s.data.Lines, Routes: routes, Stops: s.data.Stops, ArrivalCodes: s.data.ArrivalCodes}
 		s.pendingLC = len(missing)
 		s.mu.Unlock()
 		for _, code := range missing {
@@ -255,7 +293,8 @@ func (s *Store) Refresh() {
 			return err
 		}
 		s.mu.Lock()
-		s.next = &Data{Lines: lines, Routes: map[string][]telematics.Route{}, Stops: s.data.Stops}
+		s.next = &Data{Lines: lines, Routes: map[string][]telematics.Route{}, Stops: s.data.Stops,
+			ArrivalCodes: s.data.ArrivalCodes}
 		codes := map[string]bool{}
 		for _, l := range lines {
 			codes[l.LineCode] = true

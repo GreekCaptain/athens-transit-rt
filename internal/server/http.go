@@ -149,7 +149,7 @@ func writeJSON(w http.ResponseWriter, status, maxAge int, v any) {
 func clamp(v, lo, hi int64) int64 { return max(lo, min(hi, v)) }
 
 func (a *App) handleLine(w http.ResponseWriter, r *http.Request) {
-	line := CanonicalLine(r.PathValue("id"))
+	line := a.canonLine(r.PathValue("id"))
 	now := a.now()
 	a.mu.RLock()
 	known := a.known[line]

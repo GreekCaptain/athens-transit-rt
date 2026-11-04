@@ -1,5 +1,5 @@
 // Package geo measures positions along routes: a local equirectangular projection centred on
-// Athens, polylines, and the snapping of stops onto a shape.
+// the city, polylines, and the snapping of stops onto a shape.
 package geo
 
 import (
@@ -13,6 +13,10 @@ const (
 )
 
 var cosLat0 = math.Cos(37.98 * math.Pi / 180)
+
+// SetOriginLat sets the projection's reference latitude. It is process-wide and must be set
+// once at startup, before any position is projected.
+func SetOriginLat(lat float64) { cosLat0 = math.Cos(lat * math.Pi / 180) }
 
 // XY projects (lat, lon) to metres.
 func XY(lat, lon float64) [2]float64 {

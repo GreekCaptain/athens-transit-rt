@@ -18,6 +18,10 @@ type StopsFunc func(routeCode string) (stops []string, ok bool)
 // (line 040 runs on 3922/3923/3924 while the GTFS uses 5512/5513/5535), so the mapping is made
 // by comparing stop sequences.
 type RouteMapper struct {
+	// ShapeIDsAreRouteCodes: a route code equal to a shape id is that shape (OASA). False for
+	// OASTH, whose route codes and the OSETH GTFS shape ids are unrelated numbers.
+	ShapeIDsAreRouteCodes bool
+
 	feed  *gtfs.Feed
 	stops StopsFunc
 	mu    sync.Mutex
@@ -25,7 +29,7 @@ type RouteMapper struct {
 }
 
 func NewRouteMapper(feed *gtfs.Feed, stops StopsFunc) *RouteMapper {
-	return &RouteMapper{feed: feed, stops: stops, cache: map[[2]string]map[int32]bool{}}
+	return &RouteMapper{ShapeIDsAreRouteCodes: true, feed: feed, stops: stops, cache: map[[2]string]map[int32]bool{}}
 }
 
 // ShapesFor returns the set of shape indices (-1 = trips without a shape) a route code runs on.
@@ -67,7 +71,7 @@ func (rm *RouteMapper) ShapesFor(line, routeCode string) map[int32]bool {
 	}
 	result := map[int32]bool{}
 	for _, s := range shapeOrder {
-		if f.ShapeIDOf(s) == routeCode {
+		if rm.ShapeIDsAreRouteCodes && f.ShapeIDOf(s) == routeCode {
 			result[s] = true
 			rm.store(key, result)
 			return result

@@ -16,7 +16,7 @@ const (
 
 // tileBox is the area tiles exist for: Attica with a margin. Fixed, so the set of URLs (and the
 // load on the origin behind the cache) does not grow with clients.
-var tileBox = struct{ south, west, north, east float64 }{37.5, 22.9, 38.5, 24.5}
+var tileBox = TileBox{37.5, 22.9, 38.5, 24.5}
 
 type tileKey struct{ z, x, y int }
 
@@ -48,8 +48,8 @@ func tileOf(lat, lon float64, z int) (x, y int) {
 
 // tileRange is the inclusive range of tiles at zoom z that touch tileBox.
 func tileRange(z int) (x0, x1, y0, y1 int) {
-	x0, y0 = tileOf(tileBox.north, tileBox.west, z)
-	x1, y1 = tileOf(tileBox.south, tileBox.east, z)
+	x0, y0 = tileOf(tileBox.North, tileBox.West, z)
+	x1, y1 = tileOf(tileBox.South, tileBox.East, z)
 	return x0, x1, y0, y1
 }
 
