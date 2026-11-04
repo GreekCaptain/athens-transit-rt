@@ -31,7 +31,7 @@ func (o *oasaAdapter) Namespace() string { return oasaNS }
 
 func (o *oasaAdapter) Resolve(kind Kind, id string) string {
 	if kind == KindLine {
-		return oasaPrefix + CanonicalLine(strings.TrimPrefix(id, oasaPrefix))
+		return oasaPrefix + o.a.canonLine(strings.TrimPrefix(id, oasaPrefix))
 	}
 	return id
 }

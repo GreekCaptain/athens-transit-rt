@@ -175,3 +175,50 @@ func TestOASTHRefusedSessionsBackOff(t *testing.T) {
 		t.Fatalf("%d sessions a minute later, want 3", fake.sessions)
 	}
 }
+
+// A 401 that arrives after the session was renewed is about the old cookie: it must not drop
+// the new session nor count as a refusal.
+func TestOASTHLate401KeepsTheNewSession(t *testing.T) {
+	now := time.Date(2026, 11, 4, 20, 26, 0, 0, gtfs.Athens)
+	fake := &oasthFake{salt: "salt-", now: now}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	auth := NewOASTHAuth(srv.URL+"/api/", "salt-", srv.Client())
+	auth.Now = func() time.Time { return now }
+	ctx := context.Background()
+	newReq := func() *http.Request { r, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/?act=x", nil); return r }
+	old := newReq()
+	if err := auth.Apply(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(55 * time.Minute)
+	fresh := newReq()
+	if err := auth.Apply(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+	auth.Reject(old) // the old request's 401 lands now
+	again := newReq()
+	if err := auth.Apply(ctx, again); err != nil {
+		t.Fatal(err)
+	}
+	if fake.sessions != 2 || again.Header.Get("Cookie") != fresh.Header.Get("Cookie") {
+		t.Fatalf("sessions %d, cookie %q (want %q): a late 401 dropped the new session",
+			fake.sessions, again.Header.Get("Cookie"), fresh.Header.Get("Cookie"))
+	}
+}
+
+// A refused session is an HTTPError of webGetLangs, so the Pacer sees a 403 or 429 and pauses
+// like for any other act.
+func TestOASTHRefusedSessionIsAnHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+	c := New(srv.URL+"/api/", nil)
+	c.Auth = NewOASTHAuth(srv.URL+"/api/", "salt-", c.HTTP)
+	_, err := c.BusLocations(context.Background(), "2680")
+	var he *HTTPError
+	if !errors.As(err, &he) || he.Status != http.StatusForbidden || he.Act != "webGetLangs" {
+		t.Fatalf("err %v, want an HTTPError 403 of webGetLangs", err)
+	}
+}

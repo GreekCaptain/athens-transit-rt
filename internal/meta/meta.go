@@ -29,7 +29,8 @@ type Data struct {
 	Lines     []telematics.Line             `json:"lines"`
 	Routes    map[string][]telematics.Route `json:"routes"` // by LineCode
 	Stops     map[string][]string           `json:"stops"`  // by RouteCode
-	// ArrivalCodes maps a stop key to the code getStopArrivals wants, only where they differ.
+	// ArrivalCodes maps a stop key to the code getStopArrivals wants, for APIs that key stops
+	// differently from the GTFS (OASTH); empty for OASA.
 	ArrivalCodes map[string]string `json:"arrival_codes,omitempty"`
 }
 
@@ -104,15 +105,15 @@ func (s *Store) aliasLocked(id string) string {
 	return s.alias(id)
 }
 
-// ArrivalCode is the code getStopArrivals wants for a stop key: the stop itself unless the
-// telematics API keys stops differently from the GTFS (OASTH).
-func (s *Store) ArrivalCode(stop string) string {
+// ArrivalCode is the code getStopArrivals wants for a stop key, and whether a route's stop list
+// gave it. Unknown: the stop itself and false (right for OASA, whose codes are the GTFS ids).
+func (s *Store) ArrivalCode(stop string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if c := s.data.ArrivalCodes[stop]; c != "" {
-		return c
+		return c, true
 	}
-	return stop
+	return stop, false
 }
 
 // LineRoutes maps a line number (LineID) to its route codes, each with its LineCode.
@@ -194,7 +195,7 @@ func (s *Store) Stops(routeCode string) ([]string, bool) {
 			codes := make([]string, len(stops))
 			for i, st := range stops {
 				codes[i] = st.StopCode
-				if st.ArrivalCode != "" && st.ArrivalCode != st.StopCode {
+				if st.ArrivalCode != "" {
 					s.data.ArrivalCodes[st.StopCode] = st.ArrivalCode
 				}
 			}

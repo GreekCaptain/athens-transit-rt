@@ -84,3 +84,39 @@ func TestThessalonikiApp(t *testing.T) {
 		t.Fatalf("athens app changed: %d adapters, auth %v", len(b.adapters), b.client.Auth)
 	}
 }
+
+// Line ids from requests follow the city's spelling: Athens turns Latin look-alikes into Greek
+// (A1 -> Α1); Thessaloniki uses its GTFS spelling, which mixes both (01A, 39Σ).
+func TestCanonLinePerCity(t *testing.T) {
+	ath := New(Config{StateDir: t.TempDir(), RPS: 1, Matcher: match.Memory, Sched: sched.DefaultConfig()},
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if got := ath.canonLine(" a1 "); got != "Α1" {
+		t.Errorf("athens canonLine(a1) = %q", got)
+	}
+	th := New(Config{City: "thessaloniki", OASTHSalt: "s", StateDir: t.TempDir(), RPS: 1, Matcher: match.Memory,
+		Sched: sched.DefaultConfig()}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if got := th.canonLine("01a"); got != "01A" {
+		t.Errorf("before a feed: canonLine(01a) = %q, want 01A", got)
+	}
+	th.setLineAlias(lineAlias([]string{"01A", "39Σ"}))
+	for in, want := range map[string]string{"01a": "01A", "01Α": "01A", "39S": "39Σ", "39σ": "39Σ", "99": "99"} {
+		if got := th.canonLine(in); got != want {
+			t.Errorf("thessaloniki canonLine(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// Thessaloniki: a stop whose arrival code is not known yet is not asked; its GTFS id is another
+// stop's code there.
+func TestArrivalCodeUnknownInThessaloniki(t *testing.T) {
+	th := New(Config{City: "thessaloniki", OASTHSalt: "s", StateDir: t.TempDir(), RPS: 1, Matcher: match.Memory,
+		Sched: sched.DefaultConfig()}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if _, err := th.arrivalCode("11048"); err == nil {
+		t.Fatal("unknown Thessaloniki stop asked with its GTFS id")
+	}
+	ath := New(Config{StateDir: t.TempDir(), RPS: 1, Matcher: match.Memory, Sched: sched.DefaultConfig()},
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if c, err := ath.arrivalCode("400075"); err != nil || c != "400075" {
+		t.Fatalf("athens arrivalCode = %q %v, want the stop code itself", c, err)
+	}
+}

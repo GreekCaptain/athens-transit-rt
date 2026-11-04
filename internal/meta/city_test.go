@@ -26,24 +26,25 @@ func TestArrivalCodesArePersisted(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "meta.json")
 	q := &queue{}
 	s := Open(path, oasthAPI{}, q.submit, nil)
-	if got := s.ArrivalCode("11048"); got != "11048" {
-		t.Fatalf("unknown stop: %q, want the code itself", got)
+	if got, ok := s.ArrivalCode("11048"); ok || got != "11048" {
+		t.Fatalf("unknown stop: %q %v, want the code itself and false", got, ok)
 	}
 	s.Stops("r1")
 	q.drain()
 	if st, ok := s.Stops("r1"); !ok || len(st) != 3 || st[0] != "11048" {
 		t.Fatalf("stops %v %v: keyed by the GTFS id", st, ok)
 	}
-	if got := s.ArrivalCode("11048"); got != "4483" {
+	if got, ok := s.ArrivalCode("11048"); !ok || got != "4483" {
 		t.Fatalf("arrival code %q, want 4483", got)
 	}
 	// A reopened store (a restart) still knows it without asking OASTH again.
 	s2 := Open(path, oasthAPI{}, (&queue{}).submit, nil)
-	if got := s2.ArrivalCode("11046"); got != "4579" {
+	if got, ok := s2.ArrivalCode("11046"); !ok || got != "4579" {
 		t.Fatalf("after reload: %q, want 4579", got)
 	}
-	if got := s2.ArrivalCode("9"); got != "9" {
-		t.Fatalf("same code: %q", got)
+	// A stop whose code is the same on both sides is known too (a route listed it).
+	if got, ok := s2.ArrivalCode("9"); !ok || got != "9" {
+		t.Fatalf("same code: %q %v", got, ok)
 	}
 }
 

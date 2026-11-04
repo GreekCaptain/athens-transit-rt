@@ -253,7 +253,7 @@ func (c *Client) do(ctx context.Context, out any, act, u string) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusUnauthorized && c.Auth != nil {
-			c.Auth.Reject() // the next call starts a new session; this one is not retried (one request per slot)
+			c.Auth.Reject(req) // the next call starts a new session; this one is not retried (one request per slot)
 		}
 		return &HTTPError{Act: act, Status: resp.StatusCode} // before the body: a refusal must stay visible
 	}

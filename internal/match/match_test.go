@@ -187,3 +187,16 @@ func TestAlongIsDistanceOnTheTripLine(t *testing.T) {
 		}
 	}
 }
+
+// OASTH route codes are not shape ids: a code that happens to equal one maps by its stops only.
+func TestRouteMapperWithoutShapeIDs(t *testing.T) {
+	f := line(t)
+	rm := NewRouteMapper(f, func(string) ([]string, bool) { return []string{"Y", "Z", "W", "V", "U"}, true })
+	rm.ShapeIDsAreRouteCodes = false
+	if len(rm.ShapesFor("L", "SH")) != 0 {
+		t.Fatal("route code SH mapped to shape SH by its id, not its stops")
+	}
+	if !NewRouteMapper(f, noStops).ShapeIDsAreRouteCodes {
+		t.Fatal("OASA default changed")
+	}
+}

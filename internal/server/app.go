@@ -98,6 +98,8 @@ type App struct {
 	meta   *meta.Store
 	fetch  *release.Fetcher
 	city   City
+	// lineAliasFn: Thessaloniki's spelling of a line id (the GTFS one); set with each feed.
+	lineAliasFn atomic.Pointer[func(string) string]
 
 	matchMu sync.Mutex // serialises matching (matchers are not concurrency-safe) and motion
 	motion  *motion
@@ -248,9 +250,10 @@ func (a *App) rail() bool { return a.city.Rail }
 func (a *App) SetFeed(f *gtfs.Feed, m *release.Manifest) {
 	if !a.rail() {
 		// Before the mapper: it reads line numbers and route codes from the store.
-		a.meta.SetLineAlias(lineAlias(f.Lines()))
+		a.setLineAlias(lineAlias(f.Lines()))
 	}
 	mapper := match.NewRouteMapper(f, a.meta.Stops)
+	mapper.ShapeIDsAreRouteCodes = a.rail() // Athens: OASA route codes are often the GTFS shape ids
 	w := &world{feed: f, manifest: m, mapper: mapper, matcher: match.New(f, mapper, a.cfg.Matcher), stopLines: stopLines(f)}
 	a.matchMu.Lock()
 	a.mu.Lock()
@@ -587,6 +590,35 @@ var latinToGreek = strings.NewReplacer("A", "Α", "B", "Β", "E", "Ε", "Z", "Ζ
 // CanonicalLine normalises a line id as users type it (Latin look-alikes for Greek letters).
 func CanonicalLine(raw string) string {
 	return latinToGreek.Replace(strings.ToUpper(strings.TrimSpace(raw)))
+}
+
+// canonLine is CanonicalLine in Athens. Thessaloniki's GTFS mixes Latin and Greek letters
+// (01A, 39Σ), so there a line id takes the feed's spelling.
+func (a *App) canonLine(raw string) string {
+	if a.rail() {
+		return CanonicalLine(raw)
+	}
+	if f := a.lineAliasFn.Load(); f != nil {
+		return (*f)(raw)
+	}
+	return strings.ToUpper(strings.TrimSpace(raw))
+}
+
+// setLineAlias installs the GTFS spelling of telematics line ids, for the metadata and for ids
+// in requests.
+func (a *App) setLineAlias(f func(string) string) {
+	a.lineAliasFn.Store(&f)
+	a.meta.SetLineAlias(f)
+}
+
+// arrivalCode is the stop code to ask getStopArrivals for. In Thessaloniki the GTFS id of a stop
+// is another stop's code, so a stop no route list has mapped yet is not asked at all.
+func (a *App) arrivalCode(stop string) (string, error) {
+	c, ok := a.meta.ArrivalCode(stop)
+	if !ok && a.client.GTFSStopIDs {
+		return "", fmt.Errorf("stop %s: its telematics code is not known yet", stop)
+	}
+	return c, nil
 }
 
 // gtfsRT returns the encoded feeds, rebuilt at most every 10 s.

@@ -415,8 +415,12 @@ func (a *App) cachedArrivals(id string, maxAge time.Duration) (arrivalsEntry, bo
 
 // stopArrivalsQueued asks OASA for a stop's predictions as a background request of the scheduler.
 func (a *App) stopArrivalsQueued(ctx context.Context, stopCode string) ([]telematics.Arrival, error) {
+	code, err := a.arrivalCode(stopCode)
+	if err != nil {
+		return nil, err
+	}
 	return queued(ctx, a, func(sctx context.Context) ([]telematics.Arrival, error) {
-		return a.client.StopArrivals(sctx, a.meta.ArrivalCode(stopCode))
+		return a.client.StopArrivals(sctx, code)
 	})
 }
 

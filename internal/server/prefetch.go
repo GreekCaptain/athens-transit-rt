@@ -41,7 +41,7 @@ func (a *App) prefetchDailyOnce(ctx context.Context) bool {
 		if ctx.Err() != nil || !gtfs.Midnight(a.now()).Equal(today) { // past midnight: the next round
 			return false
 		}
-		a.dailyVia(ctx, CanonicalLine(line), today, a.dailyBg, dailyPrefetchTimeout, false)
+		a.dailyVia(ctx, a.canonLine(line), today, a.dailyBg, dailyPrefetchTimeout, false)
 	}
 	return ctx.Err() == nil
 }

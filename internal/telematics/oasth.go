@@ -18,8 +18,9 @@ import (
 type Auth interface {
 	// Apply adds the session and headers to req, starting a session first when needed.
 	Apply(ctx context.Context, req *http.Request) error
-	// Reject tells Auth the API answered 401, so the session is gone and the next Apply starts a new one.
-	Reject()
+	// Reject tells Auth the API answered 401 to req, so req's session is gone and the next Apply
+	// starts a new one. A late 401 of an older session changes nothing.
+	Reject(req *http.Request)
 }
 
 // OASTHSessionTTL is how long a session is reused. PHPSESSID lives one hour; renewing a little
@@ -103,7 +104,7 @@ func (a *OASTHAuth) startLocked(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("OASTH session: HTTP %d", resp.StatusCode)
+		return &HTTPError{Act: "webGetLangs", Status: resp.StatusCode} // the Pacer pauses on 403 and 429 as for any act
 	}
 	for _, c := range resp.Cookies() {
 		if c.Name == "PHPSESSID" && c.Value != "" {
@@ -114,11 +115,11 @@ func (a *OASTHAuth) startLocked(ctx context.Context) error {
 	return errors.New("OASTH: no session cookie")
 }
 
-func (a *OASTHAuth) Reject() {
+func (a *OASTHAuth) Reject(req *http.Request) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.cookie != "" {
+	if a.cookie != "" && req.Header.Get("Cookie") == "PHPSESSID="+a.cookie {
 		a.refused++
+		a.cookie = ""
 	}
-	a.cookie = ""
 }
