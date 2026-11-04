@@ -426,3 +426,28 @@ func TestV2ProastiakosDirectionWithoutRuns(t *testing.T) {
 		}
 	}
 }
+
+// At 00:30 a run of the evening before is still the board's (#84): its vehicle names the run of
+// that day, and the run answers with its stops passed.
+func TestV2ProastiakosAfterMidnight(t *testing.T) {
+	night := time.Date(2026, 10, 29, 0, 30, 0, 0, gtfs.Athens)
+	a, _, _ := proastiakosApp(t, night)
+	var r struct {
+		Run *model.Run `json:"run"`
+	}
+	v2get(t, a, "/v2/runs/"+esc("proastiakos:run:2539:2026-10-28"), &r)
+	if r.Run == nil || len(r.Run.Stops) == 0 {
+		t.Fatalf("run %s", asJSON(r.Run))
+	}
+	for _, s := range r.Run.Stops {
+		if !s.Passed {
+			t.Fatalf("stop not passed %s", asJSON(s))
+		}
+	}
+	if res, _ := get(t, a, "/v2/runs/"+esc("proastiakos:run:2539:2026-10-29")); res.StatusCode != 404 {
+		t.Fatalf("tomorrow's id: %d", res.StatusCode)
+	}
+	if got := subRunID("2539", rail.SuburbanDay(night)); got != "proastiakos:run:2539:2026-10-28" {
+		t.Fatalf("run id %s", got)
+	}
+}

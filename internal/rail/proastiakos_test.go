@@ -455,3 +455,48 @@ func TestSuburbanTrainPicksTheRunOfNow(t *testing.T) {
 		t.Errorf("06:00 → %s", got)
 	}
 }
+
+// After midnight the runs of the evening before are still under way: the board day changes at
+// 03:00 Athens, not at 00:00 (#84).
+func TestSuburbanBoardDayChangesAt3(t *testing.T) {
+	for _, c := range []struct {
+		h, m int
+		want string
+	}{{0, 0, "2026-10-28"}, {0, 26, "2026-10-28"}, {2, 59, "2026-10-28"}, {3, 0, "2026-10-29"}, {23, 59, "2026-10-29"}} {
+		if got := boardDate(time.Date(2026, 10, 29, c.h, c.m, 0, 0, gtfs.Athens)); got != c.want {
+			t.Errorf("%02d:%02d → %s, want %s", c.h, c.m, got, c.want)
+		}
+	}
+}
+
+func TestSuburbanTrainAfterMidnightReadsTheEveningsBoard(t *testing.T) {
+	var mu sync.Mutex
+	var dates []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/public/schedule-board" {
+			mu.Lock()
+			dates = append(dates, r.URL.Query().Get("date"))
+			mu.Unlock()
+			io.WriteString(w, boardJSON)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	night := time.Date(2026, 10, 29, 0, 30, 0, 0, gtfs.Athens)
+	s := &Suburban{BaseURL: srv.URL, HTTP: srv.Client(), Now: func() time.Time { return night }}
+	if _, found, ok := s.Train(context.Background(), "2539", night); !ok || !found {
+		t.Fatalf("found %v ok %v", found, ok)
+	}
+	if _, ok := s.Departures(context.Background(), "ST-PIR", 5, night); !ok {
+		t.Fatal("departures not ok")
+	}
+	if _, _, ok := s.Board(context.Background(), night); !ok {
+		t.Fatal("board not ok")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(dates) != 1 || dates[0] != "2026-10-28" {
+		t.Fatalf("boards fetched %v, want [2026-10-28]", dates)
+	}
+}

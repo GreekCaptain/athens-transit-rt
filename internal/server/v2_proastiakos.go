@@ -346,9 +346,10 @@ func subDelay(sc *rail.SuburbanSchedule, st *rail.SuburbanBoardStop, tr *rail.Su
 	return nil, false
 }
 
-// subRunID is the id of a train's run of now's day (the board is per Athens day).
-func subRunID(no string, now time.Time) string {
-	return subPrefix + "run:" + no + ":" + noonOf(now).Format(time.DateOnly)
+// subRunID is the id of a train's run of a day (any time of it; the board is per day). The board
+// day of a time is rail.SuburbanDay.
+func subRunID(no string, day time.Time) string {
+	return subPrefix + "run:" + no + ":" + noonOf(day).Format(time.DateOnly)
 }
 
 // Arrivals are the board's departures from the Stop in the next 2 h, at scheduled time + delay
@@ -412,7 +413,7 @@ func (s *proastiakosAdapter) Arrivals(ctx context.Context, stopID string, now ti
 			}
 			ar := model.Arrival{Line: x.lines[c].ID, Stop: stopID, Headsign: sc.Destination, At: t.Unix(),
 				ScheduledAt: model.Ptr(sched.Unix()), DelayS: delayS, Source: model.SourceTable,
-				Run: model.Ptr(subRunID(sc.Train, now)), Platform: st.Platform, Status: model.StatusOf(isLive, delayS)}
+				Run: model.Ptr(subRunID(sc.Train, rail.SuburbanDay(now))), Platform: st.Platform, Status: model.StatusOf(isLive, delayS)}
 			if isLive {
 				ar.Source = model.SourceLive
 			}
@@ -474,7 +475,7 @@ func (s *proastiakosAdapter) vehicles(now time.Time, only int) []model.Vehicle {
 		}
 		runDir := -1
 		if r, ok := runs[tr.Train]; ok {
-			v.Run = model.Ptr(subRunID(tr.Train, now))
+			v.Run = model.Ptr(subRunID(tr.Train, rail.SuburbanDay(now)))
 			if r[0] == c {
 				runDir = r[1]
 			}
@@ -602,13 +603,14 @@ func (s *proastiakosAdapter) LineVehicles(id string, now time.Time) (*LineVehicl
 func (s *proastiakosAdapter) Run(id string, now time.Time) (*model.Run, error) {
 	x := s.index()
 	no, noon, ok := model.ParseRunID(subNS, id, gtfs.Athens)
-	if ok && !noon.Equal(noonOf(now)) {
+	day := rail.SuburbanDay(now)
+	if ok && !noon.Equal(day) {
 		// A run of a plan after midnight: the board is per calendar day (contract §9).
 		if run, found := s.a.plannedRun(id, now); found {
 			return run, nil
 		}
 	}
-	if !ok || !noon.Equal(noonOf(now)) {
+	if !ok || !noon.Equal(day) {
 		return nil, errUnknown
 	}
 	list, at, ok := s.board.Board(context.Background(), now)

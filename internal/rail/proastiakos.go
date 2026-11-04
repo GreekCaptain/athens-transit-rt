@@ -188,7 +188,7 @@ func (s *Suburban) Departures(ctx context.Context, stationID string, n int, now 
 	primary, ids, name := s.lookupLocked(stationID)
 	s.mu.Unlock()
 
-	date := now.In(gtfs.Athens).Format(time.DateOnly)
+	date := boardDate(now)
 	out := &SuburbanDepartures{Station: name, Departures: []SuburbanDeparture{}}
 	if b, ok := s.board(ctx, date); ok {
 		out.Departures = b.departures(ids, now, n)
@@ -806,7 +806,7 @@ type SuburbanRun struct {
 // Train returns today's run of a train number from the day's board. found is false for a number
 // with no run today (or only cancelled ones); ok is false when the board is unavailable.
 func (s *Suburban) Train(ctx context.Context, no string, now time.Time) (run *SuburbanRun, found, ok bool) {
-	b, ok := s.board(ctx, now.In(gtfs.Athens).Format(time.DateOnly))
+	b, ok := s.board(ctx, boardDate(now))
 	if !ok {
 		return nil, false, false
 	}
