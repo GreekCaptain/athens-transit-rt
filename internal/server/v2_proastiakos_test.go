@@ -30,13 +30,18 @@ type fakeSubBoard struct {
 	failing bool
 	primary map[string]string
 	fetches int
+	days    map[string][]rail.SuburbanSchedule
 }
 
-func (f *fakeSubBoard) Board(context.Context, time.Time) ([]rail.SuburbanSchedule, time.Time, bool) {
+func (f *fakeSubBoard) Board(_ context.Context, now time.Time) ([]rail.SuburbanSchedule, time.Time, bool) {
 	f.fetches++
-	return f.list, f.at, f.ok
+	return f.CachedBoard(now)
 }
-func (f *fakeSubBoard) CachedBoard(time.Time) ([]rail.SuburbanSchedule, time.Time, bool) {
+func (f *fakeSubBoard) CachedBoard(now time.Time) ([]rail.SuburbanSchedule, time.Time, bool) {
+	if f.days != nil { // a board per board day
+		l, ok := f.days[rail.SuburbanDay(now).Format(time.DateOnly)]
+		return l, f.at, ok
+	}
 	return f.list, f.at, f.ok
 }
 func (f *fakeSubBoard) BoardFailing() bool { return f.failing }
@@ -424,5 +429,67 @@ func TestV2ProastiakosDirectionWithoutRuns(t *testing.T) {
 		if d, ok := want[v.ID]; ok && (v.Run != nil || v.Direction == nil || *v.Direction != d || v.Motion == nil) {
 			t.Fatalf("%s", asJSON(v))
 		}
+	}
+}
+
+// At 00:30 a run of the evening before is still the board's (#84): its vehicle names the run of
+// that day, and the run answers with its stops passed.
+func TestV2ProastiakosAfterMidnight(t *testing.T) {
+	night := time.Date(2026, 10, 29, 0, 30, 0, 0, gtfs.Athens)
+	a, _, _ := proastiakosApp(t, night)
+	var r struct {
+		Run *model.Run `json:"run"`
+	}
+	v2get(t, a, "/v2/runs/"+esc("proastiakos:run:2539:2026-10-28"), &r)
+	if r.Run == nil || len(r.Run.Stops) == 0 {
+		t.Fatalf("run %s", asJSON(r.Run))
+	}
+	for _, s := range r.Run.Stops {
+		if !s.Passed {
+			t.Fatalf("stop not passed %s", asJSON(s))
+		}
+	}
+	if res, _ := get(t, a, "/v2/runs/"+esc("proastiakos:run:2539:2026-10-30")); res.StatusCode != 404 {
+		t.Fatalf("the day after: %d", res.StatusCode)
+	}
+	if got := subRunID("2539", rail.SuburbanDay(night)); got != "proastiakos:run:2539:2026-10-28" {
+		t.Fatalf("run id %s", got)
+	}
+}
+
+// From 00:00 to 03:00 a stop shows the last runs of the evening before and the first of the day to
+// come (#84), and the run of the day to come answers.
+func TestV2ProastiakosArrivalsAcrossMidnight(t *testing.T) {
+	night := time.Date(2026, 10, 29, 2, 30, 0, 0, gtfs.Athens)
+	at := func(d, h, m int) time.Time { return time.Date(2026, 10, d, h, m, 0, 0, gtfs.Athens) }
+	a, fb, _ := proastiakosApp(t, night)
+	fb.days = map[string][]rail.SuburbanSchedule{
+		"2026-10-28": {{Train: "2599", Corridor: "KIATO", Status: "in_progress", Destination: "Ρουφ",
+			Stops: []rail.SuburbanBoardStop{bstop(stPir, "Πειραιάς", "origin", at(29, 2, 20)),
+				bstop(stRen, "Ρέντης", "stop", at(29, 2, 40)), bstop(stRouf, "Ρουφ", "destination", at(29, 2, 50))}}},
+		"2026-10-29": {{Train: "2501", Corridor: "KIATO", Status: "scheduled", Destination: "Ρουφ",
+			Stops: []rail.SuburbanBoardStop{bstop(stPir, "Πειραιάς", "origin", at(29, 4, 10)),
+				bstop(stRen, "Ρέντης", "stop", at(29, 4, 20)), bstop(stRouf, "Ρουφ", "destination", at(29, 4, 30))}}},
+	}
+	got, err := a.subAdapter().Arrivals(context.Background(), rentis, night)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("err %v arrivals %s", err, asJSON(got))
+	}
+	if *got[0].Run != "proastiakos:run:2599:2026-10-28" || got[0].At != at(29, 2, 40).Unix() ||
+		*got[1].Run != "proastiakos:run:2501:2026-10-29" || got[1].At != at(29, 4, 20).Unix() || got[1].Vehicle != nil {
+		t.Fatalf("arrivals %s", asJSON(got))
+	}
+	var r struct {
+		Run *model.Run `json:"run"`
+	}
+	for _, id := range []string{"proastiakos:run:2599:2026-10-28", "proastiakos:run:2501:2026-10-29"} {
+		r.Run = nil
+		v2get(t, a, "/v2/runs/"+esc(id), &r)
+		if r.Run == nil || len(r.Run.Stops) != 3 {
+			t.Fatalf("%s: %s", id, asJSON(r.Run))
+		}
+	}
+	if res, _ := get(t, a, "/v2/runs/"+esc("proastiakos:run:2501:2026-10-30")); res.StatusCode != 404 {
+		t.Fatalf("day after: %d", res.StatusCode)
 	}
 }

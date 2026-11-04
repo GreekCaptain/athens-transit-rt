@@ -188,10 +188,16 @@ func (s *Suburban) Departures(ctx context.Context, stationID string, n int, now 
 	primary, ids, name := s.lookupLocked(stationID)
 	s.mu.Unlock()
 
-	date := now.In(gtfs.Athens).Format(time.DateOnly)
+	date := boardDate(now)
 	out := &SuburbanDepartures{Station: name, Departures: []SuburbanDeparture{}}
 	if b, ok := s.board(ctx, date); ok {
 		out.Departures = b.departures(ids, now, n)
+		// From 00:00 to 03:00 the first trains of the day to come are on its own board.
+		if next := now.In(gtfs.Athens).Format(time.DateOnly); next != date && len(out.Departures) < n {
+			if b, ok := s.board(ctx, next); ok {
+				out.Departures = append(out.Departures, b.departures(ids, now, n-len(out.Departures))...)
+			}
+		}
 		return out, true
 	}
 	if no, ok := mpassStationNumbers[primary]; ok {
@@ -253,8 +259,8 @@ func (s *Suburban) loadBoard(ctx context.Context, date string) (*scheduleBoard, 
 		return b, true
 	}
 	if s.laterBoard(date) {
-		// A refresh of yesterday that waited behind today's first fetch: fetching it now would
-		// drop today's board.
+		// A refresh of an old day that waited behind a newer day's first fetch: its board
+		// would not be kept.
 		return nil, false
 	}
 	if s.backoffBoard() || ctx.Err() != nil {
@@ -272,9 +278,14 @@ func (s *Suburban) loadBoard(ctx context.Context, date string) (*scheduleBoard, 
 	if s.boards == nil {
 		s.boards = map[string]*boardEntry{}
 	}
-	// Only today's board is worth keeping: one entry per date and the cache would grow.
+	// Only the boards of the newest day and the day before are worth keeping (after midnight both
+	// are read): one entry per date and the cache would grow.
+	newest := date
 	for d := range s.boards {
-		if d != date {
+		newest = max(newest, d)
+	}
+	for d := range s.boards {
+		if d < shiftDate(newest, -1) {
 			delete(s.boards, d)
 		}
 	}
@@ -343,13 +354,13 @@ func (s *Suburban) cachedBoard(date string) (*scheduleBoard, bool) {
 	return e.board, true
 }
 
-// laterBoard reports whether a board of a day after date is cached (dates are YYYY-MM-DD, so
-// they sort as strings).
+// laterBoard reports whether a board of a day over one day after date is cached, so date's
+// board would be dropped as soon as it is stored (dates are YYYY-MM-DD, so they sort as strings).
 func (s *Suburban) laterBoard(date string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for d := range s.boards {
-		if d > date {
+		if d > shiftDate(date, 1) {
 			return true
 		}
 	}
@@ -374,6 +385,15 @@ func (s *Suburban) staleBoard(date string) (*scheduleBoard, bool) {
 		return nil, false
 	}
 	return e.board, true
+}
+
+// shiftDate is the YYYY-MM-DD date n days from date (date itself if it does not parse).
+func shiftDate(date string, n int) string {
+	d, err := time.Parse(time.DateOnly, date)
+	if err != nil {
+		return date
+	}
+	return d.AddDate(0, 0, n).Format(time.DateOnly)
 }
 
 func (s *Suburban) now() time.Time {
@@ -806,7 +826,7 @@ type SuburbanRun struct {
 // Train returns today's run of a train number from the day's board. found is false for a number
 // with no run today (or only cancelled ones); ok is false when the board is unavailable.
 func (s *Suburban) Train(ctx context.Context, no string, now time.Time) (run *SuburbanRun, found, ok bool) {
-	b, ok := s.board(ctx, now.In(gtfs.Athens).Format(time.DateOnly))
+	b, ok := s.board(ctx, boardDate(now))
 	if !ok {
 		return nil, false, false
 	}

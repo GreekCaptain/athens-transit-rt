@@ -455,3 +455,86 @@ func TestSuburbanTrainPicksTheRunOfNow(t *testing.T) {
 		t.Errorf("06:00 → %s", got)
 	}
 }
+
+// After midnight the runs of the evening before are still under way: the board day changes at
+// 03:00 Athens, not at 00:00 (#84).
+func TestSuburbanBoardDayChangesAt3(t *testing.T) {
+	for _, c := range []struct {
+		h, m int
+		want string
+	}{{0, 0, "2026-10-28"}, {0, 26, "2026-10-28"}, {2, 59, "2026-10-28"}, {3, 0, "2026-10-29"}, {23, 59, "2026-10-29"}} {
+		if got := boardDate(time.Date(2026, 10, 29, c.h, c.m, 0, 0, gtfs.Athens)); got != c.want {
+			t.Errorf("%02d:%02d → %s, want %s", c.h, c.m, got, c.want)
+		}
+	}
+}
+
+func TestSuburbanTrainAfterMidnightReadsTheEveningsBoard(t *testing.T) {
+	var mu sync.Mutex
+	var dates []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/public/schedule-board" {
+			mu.Lock()
+			dates = append(dates, r.URL.Query().Get("date"))
+			mu.Unlock()
+			io.WriteString(w, boardJSON)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	night := time.Date(2026, 10, 29, 0, 30, 0, 0, gtfs.Athens)
+	s := &Suburban{BaseURL: srv.URL, HTTP: srv.Client(), Now: func() time.Time { return night }}
+	if _, found, ok := s.Train(context.Background(), "2539", night); !ok || !found {
+		t.Fatalf("found %v ok %v", found, ok)
+	}
+	if _, _, ok := s.Board(context.Background(), night); !ok {
+		t.Fatal("board not ok")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(dates) != 1 || dates[0] != "2026-10-28" {
+		t.Fatalf("boards fetched %v, want [2026-10-28]", dates)
+	}
+}
+
+// From 00:00 to 03:00 a station lists the last trains of the evening before, then the first of the
+// day to come (#84); both boards stay cached.
+func TestSuburbanDeparturesAcrossMidnight(t *testing.T) {
+	boards := map[string]string{
+		"2026-10-28": `{"schedules":[{"trainNumber":"2599","status":"in_progress","destination":{"nameGreek":"Κιάτο"},
+  "routeStations":[{"stationId":"ST-PIR","nameGreek":"Πειραιάς","role":"origin","scheduledDeparture":"2026-10-28T22:40:00.000Z"},
+   {"stationId":"ST-KIA","nameGreek":"Κιάτο","role":"destination","scheduledArrival":"2026-10-28T23:40:00.000Z"}]}]}`,
+		"2026-10-29": `{"schedules":[{"trainNumber":"2501","status":"scheduled","destination":{"nameGreek":"Κιάτο"},
+  "routeStations":[{"stationId":"ST-PIR","nameGreek":"Πειραιάς","role":"origin","scheduledDeparture":"2026-10-29T02:10:00.000Z"},
+   {"stationId":"ST-KIA","nameGreek":"Κιάτο","role":"destination","scheduledArrival":"2026-10-29T03:10:00.000Z"}]}]}`,
+	}
+	var mu sync.Mutex
+	hits := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/public/schedule-board" {
+			http.NotFound(w, r)
+			return
+		}
+		d := r.URL.Query().Get("date")
+		mu.Lock()
+		hits[d]++
+		mu.Unlock()
+		io.WriteString(w, boards[d])
+	}))
+	t.Cleanup(srv.Close)
+	night := time.Date(2026, 10, 29, 0, 30, 0, 0, gtfs.Athens)
+	s := &Suburban{BaseURL: srv.URL, HTTP: srv.Client(), Now: func() time.Time { return night }}
+	for range 2 {
+		got, ok := s.Departures(context.Background(), "ST-PIR", 5, night)
+		if !ok || len(got.Departures) != 2 || got.Departures[0].Train != "2599" || got.Departures[0].T != "00:40" ||
+			got.Departures[1].Train != "2501" || got.Departures[1].T != "04:10" {
+			t.Fatalf("ok %v %+v", ok, got)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if hits["2026-10-28"] != 1 || hits["2026-10-29"] != 1 {
+		t.Fatalf("board fetches %v, want one per day", hits)
+	}
+}

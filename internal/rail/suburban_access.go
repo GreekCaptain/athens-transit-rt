@@ -65,7 +65,17 @@ func (s *Suburban) StationPrimary(id string) (string, bool) {
 	return p, ok
 }
 
-func boardDate(now time.Time) string { return now.In(gtfs.Athens).Format(time.DateOnly) }
+// boardDayStart is when the board day changes, Athens time: the runs of the evening before end
+// after midnight and are only on that day's board; the new day's first run is after 04:00.
+const boardDayStart = 3 * time.Hour
+
+// SuburbanDay is noon of the board day of now: the Athens calendar day of now - 03:00.
+func SuburbanDay(now time.Time) time.Time {
+	l := now.Add(-boardDayStart).In(gtfs.Athens)
+	return time.Date(l.Year(), l.Month(), l.Day(), 12, 0, 0, 0, gtfs.Athens)
+}
+
+func boardDate(now time.Time) string { return SuburbanDay(now).Format(time.DateOnly) }
 
 func convertBoard(b *scheduleBoard) []SuburbanSchedule {
 	out := make([]SuburbanSchedule, 0, len(b.Schedules))

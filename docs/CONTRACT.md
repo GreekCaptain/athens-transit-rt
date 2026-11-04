@@ -807,7 +807,10 @@ Rules:
   the line card. It answers for any Run of the service day, started or not (`vehicle: null`
   before it starts). OASA: the matched trip's stops, timetable time plus observed delay.
   `404 {"error":"unknown_run"}` outside the service day (rev 16: a Run that `/v2/plan` returned
-  answers until 03:00 after its service day, §9).
+  answers until 03:00 after its service day, §9). Proastiakos: the service day of a Run, and the
+  date in its id, runs 03:00 to 03:00 Athens time, so at 00:30 a train that left at 23:13 is still
+  the Run of the evening before (#84). From 00:00 to 03:00 the Runs of the day to come answer too,
+  and a Stop's arrivals list both days.
 - Unknown ids: `404` `unknown_line` / `unknown_stop` / `unknown_run`. A Source still loading:
   `200` with the Source `warming_up` in `sources`, empty lists, and `null` for a single object
   that Source should fill (e.g. `line: null` in `/v2/lines/{id}` for a suburban Line before the
