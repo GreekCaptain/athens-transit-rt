@@ -299,3 +299,57 @@ func TestItemJSON(t *testing.T) {
 		}
 	}
 }
+
+// oasa.gr can serve another notice at a notice's link (X95 → 861Β, 2026-11-04): the text then
+// comes from the WordPress API, and the link goes to the news list.
+func TestPollerWrongNoticePage(t *testing.T) {
+	item := func(id, link string) string {
+		return `<item><title>Μερική προσωρινή τροποποίηση της λεωφορειακής γραμμής Χ95</title><link>` + link +
+			`</link><pubDate>Wed, 04 Nov 2026 10:47:19 +0000</pubDate><guid isPermaLink="false">https://www.oasa.gr/?p=` + id + `</guid></item>`
+	}
+	feed := `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel>` +
+		item("14967", "https://www.oasa.gr/blog/x95/") + item("14970", "https://www.oasa.gr/blog/ok/") + `</channel></rss>`
+	page := func(id, dates string) []byte {
+		return []byte(`<html><head><link rel='shortlink' href='https://www.oasa.gr/?p=` + id + `' /></head><body class="post-template-default single postid-` +
+			id + `"><article><p>Με στόχο την ενημέρωση ο ΟΑΣΑ ανακοινώνει ` + dates + ` ως εξής:</p></article></body></html>`)
+	}
+	pages := map[string][]byte{
+		Feed:                              []byte(feed),
+		"https://www.oasa.gr/blog/x95/":   page("14947", "από 04/11/2026 έως 23/11/2026"),
+		"https://www.oasa.gr/blog/ok/":    page("14970", "στις 06/11/2026"),
+		PostAPI + "14967?_fields=content": []byte(`{"content":{"rendered":"<p>Με στόχο την ενημέρωση ο ΟΑΣΑ ανακοινώνει την τροποποίηση στις 04/11/2026, για τις ώρες από 23:30 έως και 06:00, ως εξής:</p>"}}`),
+		AthensTransportWP:                 []byte(`[]`),
+	}
+	gets := map[string]int{}
+	p := &Poller{
+		Get: func(_ context.Context, url string) ([]byte, error) {
+			gets[url]++
+			if b, ok := pages[url]; ok {
+				return b, nil
+			}
+			return nil, errors.New("404")
+		},
+		KnownLine: knownLine,
+		Now:       func() time.Time { return time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC) },
+	}
+	for range 2 {
+		if err := p.Poll(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := map[string]Item{}
+	for _, it := range p.Items() {
+		got[it.ID] = it
+	}
+	x := got["oasa:14967"]
+	if x.URL != NewsList || x.From == nil || *x.From != "2026-11-04" || *x.Until != "2026-11-04" {
+		t.Errorf("wrong page: url %q from %v until %v", x.URL, x.From, x.Until)
+	}
+	ok := got["oasa:14970"]
+	if ok.URL != "https://www.oasa.gr/blog/ok/" || ok.From == nil || *ok.From != "2026-11-06" {
+		t.Errorf("right page: %+v", ok)
+	}
+	if gets["https://www.oasa.gr/blog/x95/"] != 1 || gets[PostAPI+"14967?_fields=content"] != 1 {
+		t.Errorf("each page is read once: %v", gets)
+	}
+}

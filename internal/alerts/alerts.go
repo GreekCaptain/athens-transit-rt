@@ -25,6 +25,10 @@ import (
 const (
 	// Feed is OASA's news feed (WordPress RSS): every notice but the tenders is an Alert.
 	Feed = "https://www.oasa.gr/feed/"
+	// PostAPI is OASA's WordPress API for one post: PostAPI + id + "?_fields=content".
+	PostAPI = "https://www.oasa.gr/wp-json/wp/v2/posts/"
+	// NewsList is OASA's news list: the link of a notice whose own page shows another notice.
+	NewsList = "https://www.oasa.gr/blog/"
 	// AthensTransportWP is athenstransport.com's news API: its strike posts (category 231).
 	AthensTransportWP = "https://www.athenstransport.com/wp-json/wp/v2/posts?categories=231&per_page=30&_fields=id,date_gmt,link,title,categories"
 
@@ -377,6 +381,47 @@ func OASAItem(fi FeedItem, article []byte, knownLine func(code string) (id, mode
 	return it, true
 }
 
+// article is a notice's page, or its WordPress API content when the page shows another notice;
+// url then replaces the feed link.
+type article struct {
+	page []byte
+	url  string
+}
+
+var pageIDRe = regexp.MustCompile(`\bpostid-(\d+)\b|rel=['"]shortlink['"] href=['"][^'"]*[?&]p=(\d+)`)
+
+// pageID is the post id a WordPress page names (body class postid-N, or its shortlink), "" if none.
+func pageID(page []byte) string {
+	if m := pageIDRe.FindSubmatch(page); m != nil {
+		return string(m[1]) + string(m[2])
+	}
+	return ""
+}
+
+// readArticle reads a notice's text. oasa.gr can serve another notice at a notice's link (X95 →
+// 861Β, 2026-11-04): then the text comes from the WordPress API and the link is the news list.
+func (p *Poller) readArticle(ctx context.Context, fi FeedItem) (article, bool) {
+	b, err := p.get(ctx, fi.Link)
+	if err != nil {
+		return article{}, false
+	}
+	id := postID(fi.GUID)
+	got := pageID(b)
+	if got == "" || got == id {
+		return article{page: b}, true
+	}
+	p.log().Warn("alerts: oasa notice page shows another notice", "guid", fi.GUID, "page", got)
+	var post struct {
+		Content struct {
+			Rendered string `json:"rendered"`
+		} `json:"content"`
+	}
+	if b, err = p.get(ctx, PostAPI+id+"?_fields=content"); err != nil || json.Unmarshal(b, &post) != nil || post.Content.Rendered == "" {
+		return article{url: NewsList}, false
+	}
+	return article{page: []byte(post.Content.Rendered), url: NewsList}, true
+}
+
 // postID is the p= number of an OASA GUID ("https://www.oasa.gr/?p=14909"), else the GUID.
 func postID(guid string) string {
 	if u, err := url.Parse(guid); err == nil {
@@ -399,7 +444,7 @@ type Poller struct {
 	mu       sync.Mutex
 	oasa     []Item
 	wp       []Item
-	articles map[string][]byte // notice page by GUID: each one is read once
+	articles map[string]article // notice text by GUID: each one is read once
 	updated  int64
 }
 
@@ -462,23 +507,25 @@ func (p *Poller) Poll(ctx context.Context) error {
 			}
 			seen[fi.GUID] = true
 			p.mu.Lock()
-			article, read := p.articles[fi.GUID]
+			art, read := p.articles[fi.GUID]
 			p.mu.Unlock()
 			if !read && fi.Link != "" {
-				if b, err := p.get(ctx, fi.Link); err == nil {
-					article, read = b, true
+				if art, read = p.readArticle(ctx, fi); read {
 					p.mu.Lock()
 					if p.articles == nil {
-						p.articles = map[string][]byte{}
+						p.articles = map[string]article{}
 					}
-					p.articles[fi.GUID] = b
+					p.articles[fi.GUID] = art
 					p.mu.Unlock()
 				}
 			}
-			if !read {
-				article = nil
+			if art.url != "" {
+				fi.Link = art.url
 			}
-			if it, keep := OASAItem(fi, article, p.KnownLine, p.StopIDs); keep {
+			if !read {
+				art.page = nil
+			}
+			if it, keep := OASAItem(fi, art.page, p.KnownLine, p.StopIDs); keep {
 				oasa = append(oasa, it)
 			}
 		}
@@ -527,12 +574,16 @@ func (p *Poller) Poll(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
+func (p *Poller) log() *slog.Logger {
+	if p.Log != nil {
+		return p.Log
+	}
+	return slog.Default()
+}
+
 // Run polls at once, then every 10 minutes until ctx ends, and logs the failures.
 func (p *Poller) Run(ctx context.Context) {
-	log := p.Log
-	if log == nil {
-		log = slog.Default()
-	}
+	log := p.log()
 	for {
 		if err := p.Poll(ctx); err != nil {
 			log.Warn("alerts poll failed", "err", err)

@@ -765,7 +765,9 @@ Rules:
     earliest and latest date (Athens, `YYYY-MM-DD`) in the opening paragraph of the notice
     (up to «ως εξής»); `null` when it names none. `modes`: `bus`, plus `trolley` when one of
     the lines is a trolley line; both when `lines` is empty (a network-wide notice).
-    `urgent: false`. Each notice page is read once.
+    `urgent: false`. Each notice page is read once. `url`: the notice page; when oasa.gr
+    serves another notice there (its permalink redirects to a similar one), the text comes from
+    the WordPress API and `url` is the news list `https://www.oasa.gr/blog/`.
   - `source: "athenstransport"`: strikes only (category «Απεργία») from the athenstransport.com
     news site, which also covers metro, tram and trains. We show its title and link, never its
     text. `modes` from its categories; none of them means every mode. `lines`, `stops` `[]`,
