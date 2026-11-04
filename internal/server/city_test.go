@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"testing"
@@ -118,5 +119,21 @@ func TestArrivalCodeUnknownInThessaloniki(t *testing.T) {
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if c, err := ath.arrivalCode("400075"); err != nil || c != "400075" {
 		t.Fatalf("athens arrivalCode = %q %v, want the stop code itself", c, err)
+	}
+}
+
+// OASTH has no getDailySchedule ("Nothing Requested!", HTTP 400): Thessaloniki never asks for it
+// and its timetables come from the GTFS, as when OASA's daily schedule is down.
+func TestThessalonikiHasNoDailySchedule(t *testing.T) {
+	th := New(Config{City: "thessaloniki", OASTHSalt: "s", StateDir: t.TempDir(), RPS: 1, Matcher: match.Memory,
+		Sched: sched.DefaultConfig()}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	before := th.client.Requests()
+	for _, f := range []func(context.Context, string) (telematics.DailySchedule, error){th.daily, th.dailyBg} {
+		if _, err := f(context.Background(), "434"); err == nil {
+			t.Fatal("a daily schedule in Thessaloniki")
+		}
+	}
+	if th.client.Requests() != before {
+		t.Fatal("asked OASTH for a daily schedule")
 	}
 }

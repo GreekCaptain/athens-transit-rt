@@ -208,6 +208,13 @@ func New(cfg Config, log *slog.Logger) *App {
 	}
 	a.daily = a.dailyQueued
 	a.dailyBg = a.dailyBackground
+	if !c.Rail {
+		// OASTH has no getDailySchedule (HTTP 400): timetables come from the GTFS, as when OASA's is down.
+		none := func(context.Context, string) (telematics.DailySchedule, error) {
+			return telematics.DailySchedule{}, errNoDailySchedule
+		}
+		a.daily, a.dailyBg = none, none
+	}
 	a.stopArrivals = a.stopArrivalsQueued
 	a.sched = sched.New(cfg.Sched, a.pacer, a.client, a.onLine)
 	a.meta = meta.Open(filepath.Join(cfg.StateDir, "telematics-meta.json"), a.client, a.sched.Submit,
@@ -242,6 +249,8 @@ func New(cfg Config, log *slog.Logger) *App {
 	a.municipal = a.newMunicipalPoller()
 	return a
 }
+
+var errNoDailySchedule = errors.New("this city's telematics has no daily schedule")
 
 // rail reports whether the city has the Athens-only layers (STASY, Proastiakos, alerts, municipal).
 func (a *App) rail() bool { return a.city.Rail }
@@ -704,7 +713,9 @@ func (a *App) Run(ctx context.Context) error {
 		go a.typicalSpeeds(ctx)
 		go a.usualPasses(ctx)
 	}
-	go a.prefetchDaily(ctx)
+	if a.rail() {
+		go a.prefetchDaily(ctx)
+	}
 	srv := &http.Server{Addr: a.cfg.Listen, Handler: a.Handler(), ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second}
 	errc := make(chan error, 2)
