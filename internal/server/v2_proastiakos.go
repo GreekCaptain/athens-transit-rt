@@ -351,19 +351,21 @@ func subDelay(sc *rail.SuburbanSchedule, st *rail.SuburbanBoardStop, tr *rail.Su
 // number is taken as on another run (a train number repeats every day).
 const subMaxLate = 3 * time.Hour
 
-// gpsLate places a live train on its run: the index in sc.Stops of its next station, and the
-// delay in minutes it has at least there, the minutes since that station's scheduled time (the
-// stream's delay can stay 0 while a train runs an hour behind, #93). -1 and 0 when the train is
-// nil, its next station is unknown or not on the run, or it is over subMaxLate behind.
+// gpsLate places a live train on its run: the index in sc.Stops of its next station (as place
+// finds it on the track, so a stale stream station behind the train is not used), and the delay
+// in minutes it has at least there, the minutes since that station's scheduled time (the stream's
+// delay can stay 0 while a train runs an hour behind, #93). -1 and 0 when the train is nil, its
+// next station is unknown or not on the run, or it is over subMaxLate behind.
 func (s *proastiakosAdapter) gpsLate(x *subIndex, c int, sc *rail.SuburbanSchedule, tr *rail.SuburbanTrain, now time.Time) (int, int) {
 	if tr == nil {
 		return -1, 0
 	}
-	next := s.nextStation(x, c, tr)
-	if next < 0 {
+	var v model.Vehicle
+	s.place(x, c, tr, &v, s.schedDir(x, c, sc))
+	if v.NextStop == nil {
 		return -1, 0
 	}
-	id := subPrefix + x.corrs[c].Stations[next]
+	id := *v.NextStop
 	for j := range sc.Stops {
 		st := &sc.Stops[j]
 		if k, ok := s.stopOf(x, st.StationID); !ok || x.stops[k].ID != id {
@@ -794,6 +796,11 @@ func (s *proastiakosAdapter) Run(id string, now time.Time) (*model.Run, error) {
 		return nil, errUnknown
 	}
 	var tr *rail.SuburbanTrain
+	for _, d := range subDays(now) { // runDays reads both open boards
+		if !d.Equal(noon) {
+			s.board.Board(context.Background(), d)
+		}
+	}
 	if noon.Equal(runDay(s.runDays(now), no, now)) { // a train number repeats every day: the live one is on one run
 		tr = liveTrains(s.trains.Peek(), now)[no]
 	}
