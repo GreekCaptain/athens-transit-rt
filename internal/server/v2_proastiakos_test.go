@@ -493,3 +493,119 @@ func TestV2ProastiakosArrivalsAcrossMidnight(t *testing.T) {
 		t.Fatalf("day after: %d", res.StatusCode)
 	}
 }
+
+// The stream can report delay 0 while a train runs late (#93): at 10:40 train 2539 is still
+// before Ρέντης (scheduled 10:05). The stops before its next station are passed, the rest are not,
+// and the delay is at least the 35 min since 10:05, on the run, the vehicle and the stop board.
+func TestV2ProastiakosLateTrainWithZeroDelay(t *testing.T) {
+	now := athens(10, 40)
+	a, _, ft := proastiakosApp(t, now)
+	for i := range ft.snap.Trains {
+		if tr := &ft.snap.Trains[i]; tr.Train == "2539" {
+			tr.DelayMin = model.Ptr(0)
+		}
+	}
+	var r struct {
+		Run *model.Run `json:"run"`
+	}
+	v2get(t, a, "/v2/runs/"+esc("proastiakos:run:2539:2026-10-28"), &r)
+	run := r.Run
+	if run == nil || len(run.Stops) != 5 || run.Vehicle == nil {
+		t.Fatalf("%s", asJSON(run))
+	}
+	for j, s := range run.Stops {
+		if s.Passed != (j < 2) {
+			t.Fatalf("stop %d passed %v: %s", j, s.Passed, asJSON(run.Stops))
+		}
+		if j >= 2 && (s.DelayS == nil || *s.DelayS != 35*60 || s.At != *s.ScheduledAt+35*60 || s.Source != model.SourceLive) {
+			t.Fatalf("stop %d: %s", j, asJSON(s))
+		}
+	}
+	if run.Status != model.Delayed {
+		t.Fatalf("status %s", run.Status)
+	}
+	vs, _ := a.adapter("proastiakos:x").(*proastiakosAdapter).Vehicles(now)
+	for _, v := range vs {
+		if v.ID == "proastiakos:2539" && (v.DelayS == nil || *v.DelayS != 35*60) {
+			t.Fatalf("vehicle %s", asJSON(v))
+		}
+	}
+	got, err := a.subAdapter().Arrivals(context.Background(), rentis, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, ar := range got {
+		if ar.Run != nil && *ar.Run == "proastiakos:run:2539:2026-10-28" {
+			found = ar.At == athens(10, 40).Unix() && *ar.DelayS == 35*60
+		}
+	}
+	if !found {
+		t.Fatalf("2539 not at Ρέντης at 10:40: %s", asJSON(got))
+	}
+}
+
+// A train far behind any run of its number is on another run: no bound, no passed override.
+func TestV2ProastiakosLateBoundHasALimit(t *testing.T) {
+	now := athens(14, 0) // 2539's Ρέντης was at 10:05: 3 h 55 min ago
+	a, _, _ := proastiakosApp(t, now)
+	var r struct {
+		Run *model.Run `json:"run"`
+	}
+	v2get(t, a, "/v2/runs/"+esc("proastiakos:run:2539:2026-10-28"), &r)
+	if r.Run == nil {
+		t.Fatal("no run")
+	}
+	for _, s := range r.Run.Stops {
+		if !s.Passed {
+			t.Fatalf("stop not passed %s", asJSON(r.Run.Stops))
+		}
+	}
+}
+
+// A run that leaves after midnight is on the board of the day to come (#93): at 00:10 the live
+// 2539 (left Πειραιάς at 00:00) links the run of 10-29, not the 10-28 one of the night before;
+// 2304 (left 22:14) keeps the run of 10-28.
+func TestV2ProastiakosLiveTrainAfterMidnightTakesTheNearestRun(t *testing.T) {
+	night := time.Date(2026, 10, 29, 0, 10, 0, 0, gtfs.Athens)
+	at := func(d, h, m int) time.Time { return time.Date(2026, 10, d, h, m, 0, 0, gtfs.Athens) }
+	run := func(no string, d, h, m int) rail.SuburbanSchedule {
+		return rail.SuburbanSchedule{Train: no, Corridor: "KIATO", Status: "in_progress", Destination: "Ρουφ",
+			Stops: []rail.SuburbanBoardStop{bstop(stPir, "Πειραιάς", "origin", at(d, h, m)),
+				bstop(stLefka, "Λεύκα", "stop", at(d, h, m+5)), bstop(stRen, "Ρέντης", "stop", at(d, h, m+15)),
+				bstop(stRouf, "Ρουφ", "destination", at(d, h, m+30))}}
+	}
+	a, fb, ft := proastiakosApp(t, night)
+	fb.days = map[string][]rail.SuburbanSchedule{
+		"2026-10-28": {run("2539", 28, 0, 0), run("2304", 28, 23, 50)},
+		"2026-10-29": {run("2539", 29, 0, 0), run("2304", 29, 23, 50)},
+	}
+	ft.snap.Trains = append(ft.snap.Trains, rail.SuburbanTrain{Train: "2304", Corridor: "KIATO", Service: "Suburban",
+		Lat: 37.95888, Lon: 23.66121, Course: model.Ptr(60.0), SpeedKmh: 36, DelayMin: model.Ptr(0), To: "Ρουφ",
+		NextID: stRen, PositionAt: night.Unix()})
+	vs, _ := a.adapter("proastiakos:x").(*proastiakosAdapter).Vehicles(night)
+	want := map[string]string{"proastiakos:2539": "proastiakos:run:2539:2026-10-29", "proastiakos:2304": "proastiakos:run:2304:2026-10-28"}
+	for _, v := range vs {
+		if w, ok := want[v.ID]; ok {
+			if v.Run == nil || *v.Run != w {
+				t.Fatalf("%s: %s", v.ID, asJSON(v))
+			}
+			delete(want, v.ID)
+		}
+	}
+	if len(want) > 0 {
+		t.Fatalf("missing %v in %s", want, asJSON(vs))
+	}
+	var r struct {
+		Run *model.Run `json:"run"`
+	}
+	v2get(t, a, "/v2/runs/"+esc("proastiakos:run:2539:2026-10-29"), &r)
+	if r.Run == nil || r.Run.Vehicle == nil || r.Run.Stops[2].Passed {
+		t.Fatalf("10-29 %s", asJSON(r.Run))
+	}
+	r.Run = nil
+	v2get(t, a, "/v2/runs/"+esc("proastiakos:run:2539:2026-10-28"), &r)
+	if r.Run == nil || r.Run.Vehicle != nil {
+		t.Fatalf("10-28 %s", asJSON(r.Run))
+	}
+}
