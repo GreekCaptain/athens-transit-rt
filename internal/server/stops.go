@@ -9,6 +9,7 @@ import (
 
 	"github.com/angelospk/athens-transit-rt/internal/geo"
 	"github.com/angelospk/athens-transit-rt/internal/gtfs"
+	"github.com/angelospk/athens-transit-rt/internal/livespeed"
 	"github.com/angelospk/athens-transit-rt/internal/match"
 	"github.com/angelospk/athens-transit-rt/internal/model"
 	"github.com/angelospk/athens-transit-rt/internal/segspeed"
@@ -285,7 +286,7 @@ func (a *App) stopRows(w *world, stop int32, lines []string, now time.Time, hori
 		if b.pos.waiting && b.r.Matched() {
 			leave = takeRun(f, pending, b.line, f.Trip(b.r.Trip).Shape, now)
 		}
-		if row, ok := liveArrival(f, tab, stop, b, now, leave); ok && row.At <= until {
+		if row, ok := liveArrival(f, tab, a.roads, stop, b, now, leave); ok && row.At <= until {
 			rows = append(rows, row)
 		}
 	}
@@ -315,7 +316,7 @@ func (a *App) stopRows(w *world, stop int32, lines []string, now time.Time, hori
 // first stop has no time and is left out. Not past the stop by its last fix, it is never
 // overdue: late, it is due now. leave, when not zero, is the departure of a waiting bus instead
 // of its trip's (OASA's daily run on an expired GTFS).
-func liveArrival(f *gtfs.Feed, tab *segspeed.Table, stop int32, b boardVehicle, now, leave time.Time) (StopArrival, bool) {
+func liveArrival(f *gtfs.Feed, tab *segspeed.Table, roads *livespeed.Grid, stop int32, b boardVehicle, now, leave time.Time) (StopArrival, bool) {
 	p, r := b.pos, b.r
 	if !p.ok {
 		return StopArrival{}, false
@@ -358,7 +359,7 @@ func liveArrival(f *gtfs.Feed, tab *segspeed.Table, stop int32, b boardVehicle, 
 	} else if p.waiting {
 		return StopArrival{}, false // departure unknown
 	}
-	secs := boardTravel(f, p.g, f.ShapeID(t), tab, segspeed.Slot(start, gtfs.Athens), timetable, from, p.g.StopAlong[j])
+	secs := boardTravel(f, p.g, f.ShapeID(t), tab, roads, now.Unix(), segspeed.Slot(start, gtfs.Athens), timetable, from, p.g.StopAlong[j])
 	row.At = max(start.Unix()+int64(math.Round(secs)), now.Unix())
 	return row, true
 }
@@ -372,11 +373,13 @@ func maxTime(a, b time.Time) time.Time {
 
 // boardTravel is the seconds to drive from `from` to `to` along g: per 200 m bin of the shape
 // the typical speed where the history has one (a FromShape geometry; at least boardMinBinMS),
-// elsewhere the timetable's running time over that stretch (trip, nil for none), or
-// boardDefaultMS. Waits at stops and lights are in both.
-func boardTravel(f *gtfs.Feed, g *geo.Geometry, shape string, tab *segspeed.Table, slot int, trip *gtfs.Trip, from, to float64) float64 {
+// blended with today's traffic on that road where buses of any line crossed it in the last
+// minutes (roads, as a bus's path_speeds: livespeed.LiveWeight of the live speed), elsewhere
+// the timetable's running time over that stretch (trip, nil for none), or boardDefaultMS.
+// Waits at stops and lights are in both. now is for the live speeds' window.
+func boardTravel(f *gtfs.Feed, g *geo.Geometry, shape string, tab *segspeed.Table, roads *livespeed.Grid, now int64, slot int, trip *gtfs.Trip, from, to float64) float64 {
 	if !g.FromShape {
-		tab = nil
+		tab, roads = nil, nil
 	}
 	if trip != nil && f.NumStops(trip) < 2 {
 		trip = nil
@@ -385,8 +388,15 @@ func boardTravel(f *gtfs.Feed, g *geo.Geometry, shape string, tab *segspeed.Tabl
 	for x := from; x < to; {
 		bin := int(math.Floor(x / segspeed.BinM))
 		end := min(to, float64(bin+1)*segspeed.BinM)
+		var typical *float64
 		if v, ok := tab.Speed(shape, bin, slot); ok {
+			v = max(v, boardMinBinMS)
+			typical = &v
+		}
+		if v, ok := roads.Over(g.Line, x, end, typical, now); ok {
 			secs += (end - x) / max(v, boardMinBinMS)
+		} else if typical != nil {
+			secs += (end - x) / *typical
 		} else if trip != nil {
 			secs += schedAt(f, g, trip, end, end == to) - schedAt(f, g, trip, x, false)
 		} else {

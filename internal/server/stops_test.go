@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/angelospk/athens-transit-rt/internal/geo"
 	"github.com/angelospk/athens-transit-rt/internal/gtfs"
 	"github.com/angelospk/athens-transit-rt/internal/gtfs/gtfstest"
+	"github.com/angelospk/athens-transit-rt/internal/livespeed"
 	"github.com/angelospk/athens-transit-rt/internal/match"
 	"github.com/angelospk/athens-transit-rt/internal/sched"
 )
@@ -267,10 +269,10 @@ func TestStopBoardTravelEndsAtArrival(t *testing.T) {
 	f := w.feed
 	trip := f.Trip(0)
 	g := w.matcher.Geometry(trip)
-	if got := boardTravel(f, g, f.ShapeID(trip), nil, 0, trip, g.StopAlong[2], g.StopAlong[3]); math.Abs(got-240) > 1 {
+	if got := boardTravel(f, g, f.ShapeID(trip), nil, nil, 0, 0, trip, g.StopAlong[2], g.StopAlong[3]); math.Abs(got-240) > 1 {
 		t.Fatalf("S2 to S3: %.0f s, want 240 (leaves 10:11, due 10:15)", got)
 	}
-	if got := boardTravel(f, g, f.ShapeID(trip), nil, 0, trip, g.StopAlong[1], g.StopAlong[3]); math.Abs(got-540) > 1 {
+	if got := boardTravel(f, g, f.ShapeID(trip), nil, nil, 0, 0, trip, g.StopAlong[1], g.StopAlong[3]); math.Abs(got-540) > 1 {
 		t.Fatalf("S1 to S3: %.0f s, want 540 (the wait at S2 counts)", got)
 	}
 }
@@ -311,5 +313,38 @@ func TestStopBoardScheduleAcrossMidnight(t *testing.T) {
 	at := time.Date(2026, 10, 5, 0, 20, 0, 0, gtfs.Athens).Unix()
 	if len(sr.Arrivals) == 0 || sr.Arrivals[0].Source != "schedule" || *sr.Arrivals[0].TripID != "T00" || sr.Arrivals[0].At != at {
 		t.Fatalf("arrivals %s", asJSON(sr.Arrivals))
+	}
+}
+
+// Today's traffic counts on the stop board as on the path ahead of a bus: two buses of any
+// line that just crawled over a stretch make the ETA over it longer than the timetable says,
+// and a stretch no bus crossed lately keeps the timetable's time.
+func TestStopBoardTravelFollowsLiveSpeeds(t *testing.T) {
+	a := newApp(t, monday1020)
+	a.SetFeed(gtfstest.StraightLine{Stops: 5, Trips: 6, First: 10 * 3600, Headway: 10, Leg: 5, Dwell: 60}.Feed(t), nil)
+	w := a.world()
+	f := w.feed
+	trip := f.Trip(0)
+	g := w.matcher.Geometry(trip)
+	g = &geo.Geometry{Line: g.Line, StopAlong: g.StopAlong, FromShape: true}
+	now := monday1020.Unix()
+	roads := livespeed.New()
+	from, to := g.StopAlong[2], g.StopAlong[3]
+	// Two buses crossed the whole stretch at 1 m/s, 100 m between fixes, ending a minute ago.
+	for _, id := range []string{"A", "B"} {
+		for s0 := from; s0 < to; s0 += 100 {
+			s1 := math.Min(s0+100, to)
+			t1 := now - 60 - int64(to-s1)
+			roads.Pass(id, g.Line, s0, s1, t1-int64(s1-s0), t1)
+		}
+	}
+	base := boardTravel(f, g, f.ShapeID(trip), nil, nil, now, 0, trip, from, to)
+	live := boardTravel(f, g, f.ShapeID(trip), nil, roads, now, 0, trip, from, to)
+	if want := to - from; math.Abs(live-want) > 1 {
+		t.Fatalf("with live speeds: %.0f s, want %.0f (1 m/s over %.0f m), timetable alone %.0f", live, want, to-from, base)
+	}
+	// A stretch nobody crossed: as before.
+	if got := boardTravel(f, g, f.ShapeID(trip), nil, roads, now, 0, trip, g.StopAlong[0], g.StopAlong[1]); math.Abs(got-base) > 1 {
+		t.Fatalf("no live speeds: %.0f s, want %.0f", got, base)
 	}
 }
