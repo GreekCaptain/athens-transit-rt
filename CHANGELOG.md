@@ -16,6 +16,9 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
   `start_delay_s` ([#72](https://github.com/angelospk/athens-transit-rt/issues/72)).
 
 ### Live API
+- The minute stats log adds `unmatched_why`: unmatched buses counted by line and reason, e.g.
+  `87P:too_early=1`. Reasons: `no_shape`, `no_trip`, `off_route`, `too_early`, `too_late`,
+  `backwards`, `taken` (#116). The API does not change.
 - The minute stats log adds an `upstream errors` warning when new upstream errors happened:
   the source (`telematics` or `oseth`), how many, and the text of the last one. Before, only
   the counters showed, without the cause.

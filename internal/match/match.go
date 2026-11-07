@@ -84,7 +84,19 @@ type Result struct {
 	NextIndex int       // index in the trip's stop times of the next stop
 	Waiting   bool      // waiting at the first stop
 	Along     float64   // metres along the trip's Geometry line (matched only)
+	Why       string    // why it is unmatched, one of the Why* values ("" when matched)
 }
+
+// Why a vehicle is unmatched (rt#116). The first check that fails names it.
+const (
+	WhyNoShape   = "no_shape"  // no GTFS shape for the line and route code
+	WhyNoTrip    = "no_trip"   // no trip of those shapes runs around this time
+	WhyOffRoute  = "off_route" // farther than MaxOffRouteM from every candidate trip
+	WhyTooEarly  = "too_early" // on the line, but earlier than MinDelay for every trip
+	WhyTooLate   = "too_late"  // on the line, but later than MaxDelay for every trip
+	WhyBackwards = "backwards" // only fits its last trip by driving backwards along it
+	WhyTaken     = "taken"     // fits a trip, but the assignment gave it to another vehicle
+)
 
 func (r *Result) Matched() bool { return r.Trip >= 0 }
 
@@ -243,6 +255,9 @@ func (m *Matcher) MatchLine(line string, vehicles []Obs) []Result {
 	out := make([]Result, 0, len(order))
 	for _, id := range order {
 		r := byID[id]
+		if !r.Matched() {
+			r.Why = m.why(line, r)
+		}
 		if r.Matched() {
 			m.previous[id] = prevMatch{m.Feed.Trips[r.Trip].ID, progress[id], r.Time}
 		} else {
@@ -291,7 +306,7 @@ func (m *Matcher) baseCandidates(line string, r *Result) []candidate {
 		if sticky {
 			prevProgress = &prev.progress
 		}
-		s, ok := m.score(t, ct.Day, g, cands, r.Time, pos, prevProgress)
+		s, ok := m.score(t, ct.Day, g, cands, r.Time, pos, prevProgress, nil)
 		if !ok {
 			continue
 		}
@@ -344,9 +359,17 @@ type scored struct {
 	along     float64
 }
 
-// score is the cheapest way the vehicle at pos at ts can be running trip t.
+// missed collects why score found no fit: the delays nearest to the allowed range and the
+// positions skipped as backwards.
+type missed struct {
+	early, late float64 // seconds outside [MinDelay, MaxDelay], smallest seen (0 = none)
+	backwards   int
+}
+
+// score is the cheapest way the vehicle at pos at ts can be running trip t. A non-nil miss
+// records the positions it rejected.
 func (m *Matcher) score(t *gtfs.Trip, midnight time.Time, g *geo.Geometry, positions []geo.Cand,
-	ts time.Time, pos [2]float64, prevProgress *float64) (scored, bool) {
+	ts time.Time, pos [2]float64, prevProgress *float64, miss *missed) (scored, bool) {
 	f := m.Feed
 	secs := ts.Sub(midnight).Seconds()
 	n := f.NumStops(t)
@@ -356,6 +379,9 @@ func (m *Matcher) score(t *gtfs.Trip, midnight time.Time, g *geo.Geometry, posit
 	for _, c := range positions {
 		progress := g.Progress(c.Along)
 		if prevProgress != nil && progress < *prevProgress-1 {
+			if miss != nil {
+				miss.backwards++
+			}
 			continue // buses do not drive backwards along their route
 		}
 		seg := int(progress)
@@ -371,6 +397,9 @@ func (m *Matcher) score(t *gtfs.Trip, midnight time.Time, g *geo.Geometry, posit
 		} else {
 			delay = secs - (float64(stop.Dep) + frac*float64(next.Arr-stop.Dep))
 			if delay < MinDelay || delay > MaxDelay {
+				if miss != nil {
+					miss.note(delay)
+				}
 				continue
 			}
 			// Buses run late far more often than early.
@@ -389,6 +418,63 @@ func (m *Matcher) score(t *gtfs.Trip, midnight time.Time, g *geo.Geometry, posit
 		}
 	}
 	return best, found
+}
+
+func (ms *missed) note(delay float64) {
+	if delay < MinDelay {
+		if d := MinDelay - delay; ms.early == 0 || d < ms.early {
+			ms.early = d
+		}
+	} else if d := delay - MaxDelay; ms.late == 0 || d < ms.late {
+		ms.late = d
+	}
+}
+
+// why names the first check that keeps an unmatched vehicle off every trip. It repeats the
+// checks of baseCandidates, only for unmatched vehicles, so the matching path stays as it was.
+func (m *Matcher) why(line string, r *Result) string {
+	shapes := m.Mapper.ShapesFor(line, r.RouteCode)
+	if len(shapes) == 0 {
+		return WhyNoShape
+	}
+	cts := m.shapeCandidates(line, r.Time, shapes)
+	if len(cts) == 0 {
+		return WhyNoTrip
+	}
+	pos := geo.XY(r.Lat, r.Lon)
+	prev, hasPrev := m.previous[r.VehicleID]
+	onRoute := false
+	var miss missed
+	for _, ct := range cts {
+		t := m.Feed.Trip(ct.Trip)
+		g := m.Geometry(t)
+		if g == nil {
+			continue
+		}
+		cands := g.Line.Candidates(pos[0], pos[1], MaxOffRouteM, r.Bearing, r.Bearing != 0)
+		if len(cands) == 0 {
+			continue
+		}
+		onRoute = true
+		var prevProgress *float64
+		if hasPrev && t.ID == prev.trip {
+			prevProgress = &prev.progress
+		}
+		if _, ok := m.score(t, ct.Day, g, cands, r.Time, pos, prevProgress, &miss); ok {
+			return WhyTaken
+		}
+	}
+	switch {
+	case !onRoute:
+		return WhyOffRoute
+	case miss.early > 0 && (miss.late == 0 || miss.early <= miss.late):
+		return WhyTooEarly
+	case miss.late > 0:
+		return WhyTooLate
+	case miss.backwards > 0:
+		return WhyBackwards
+	}
+	return WhyTaken
 }
 
 func (m *Matcher) candidates(line string, r *Result) []candidate {
@@ -412,7 +498,7 @@ func (m *Matcher) candidates(line string, r *Result) []candidate {
 				cands = g.Line.Candidates(fx.pos[0], fx.pos[1], MaxOffRouteM, fx.heading, fx.hasHead)
 				tr.positions[k] = cands
 			}
-			if s, ok := m.score(t, c.day, g, cands, fx.ts, fx.pos, nil); ok {
+			if s, ok := m.score(t, c.day, g, cands, fx.ts, fx.pos, nil, nil); ok {
 				costs = append(costs, s.cost)
 			} else {
 				costs = append(costs, InconsistentFixCost)

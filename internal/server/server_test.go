@@ -432,6 +432,9 @@ func TestStatsLogNamesUnmatchedLines(t *testing.T) {
 	if !strings.Contains(logs.String(), " unmatched_lines=054,309Β") {
 		t.Fatalf("stats log: %s", logs.String())
 	}
+	if !strings.Contains(logs.String(), " unmatched_why=") {
+		t.Fatalf("no unmatched_why: %s", logs.String())
+	}
 	logs.Reset()
 	a.mu.Lock()
 	delete(a.lines, "054")
@@ -555,5 +558,24 @@ func TestStatsLogWarnsOnNewUpstreamErrors(t *testing.T) {
 	a.warnErrors("oseth", 5, "route 01: timeout", &seen)
 	if s := logs.String(); !strings.Contains(s, "new=2 total=5") {
 		t.Fatalf("log: %s", s)
+	}
+}
+
+// The stats log counts the unmatched buses by line and reason (rt#116), stale lines left out.
+func TestStatsLogCountsUnmatchedReasons(t *testing.T) {
+	a := newApp(t, monday1020)
+	var logs strings.Builder
+	a.log = slog.New(slog.NewTextHandler(&logs, nil))
+	a.mu.Lock()
+	a.lines["87P"] = &lineData{updated: monday1020, results: []match.Result{
+		{VehicleID: "x", Trip: -1, Why: match.WhyTooEarly}, {VehicleID: "y", Trip: -1, Why: match.WhyTooEarly}}}
+	a.lines["83N"] = &lineData{updated: monday1020, results: []match.Result{
+		{VehicleID: "a", Trip: 0}, {VehicleID: "b", Trip: -1, Why: match.WhyNoTrip}}}
+	a.lines["OLD"] = &lineData{updated: monday1020.Add(-feedMaxAge - time.Second),
+		results: []match.Result{{VehicleID: "c", Trip: -1, Why: match.WhyOffRoute}}}
+	a.mu.Unlock()
+	a.logStats()
+	if s := logs.String(); !strings.Contains(s, ` unmatched_why="83N:no_trip=1,87P:too_early=2" `) {
+		t.Fatalf("stats log: %s", s)
 	}
 }

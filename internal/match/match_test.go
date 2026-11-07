@@ -200,3 +200,42 @@ func TestRouteMapperWithoutShapeIDs(t *testing.T) {
 		t.Fatal("OASA default changed")
 	}
 }
+
+// An unmatched vehicle says why (rt#116), so the log can count causes per line instead of a
+// person guessing them from the map. Line L: trips every 10 min from 10:00, 5 min a leg.
+func TestUnmatchedReason(t *testing.T) {
+	far := obs("v", 2, at(10, 20, 0))
+	far.Lat += 0.01 // about 1.1 km off the line
+	for _, tc := range []struct {
+		name, line string
+		o          Obs
+		want       string
+	}{
+		{"matched", "L", obs("v", 2, at(10, 20, 0)), ""},
+		{"line without trips", "Q", obs("v", 2, at(10, 20, 0)), WhyNoShape},
+		{"no trip in the window", "L", obs("v", 1, at(12, 30, 0)), WhyNoTrip},
+		{"off the line", "L", far, WhyOffRoute},
+		{"20 min early", "L", obs("v", 2, at(9, 50, 0)), WhyTooEarly},
+		{"72 min late", "L", obs("v", 0.5, at(12, 5, 0)), WhyTooLate},
+	} {
+		m := newMatcher(t, Hungarian)
+		r := m.MatchLine(tc.line, []Obs{tc.o})[0]
+		if r.Why != tc.want || r.Matched() != (tc.want == "") {
+			t.Errorf("%s: why %q matched %v, want %q", tc.name, r.Why, r.Matched(), tc.want)
+		}
+	}
+}
+
+// Two buses fit the only trip: one gets it, the other is unmatched because the trip is taken.
+func TestUnmatchedReasonTaken(t *testing.T) {
+	f := gtfstest.StraightLine{Stops: 5, Trips: 1, First: 10 * 3600, Headway: 10, Leg: 5}.Feed(t)
+	m := New(f, NewRouteMapper(f, noStops), Hungarian)
+	res := m.MatchLine("L", []Obs{obs("a", 2, at(10, 10, 0)), obs("b", 2.02, at(10, 10, 0))})
+	var whys []string
+	for _, r := range res {
+		whys = append(whys, r.Why)
+	}
+	if !(whys[0] == "" && whys[1] == WhyTaken || whys[0] == WhyTaken && whys[1] == "") {
+		t.Fatalf("whys %q", whys)
+	}
+}

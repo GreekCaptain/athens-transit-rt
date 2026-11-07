@@ -890,7 +890,8 @@ func (a *App) logStats() {
 	st := a.sched.Stats()
 	a.mu.RLock()
 	vehicles, matched := 0, 0
-	var unmatched []string // lines whose buses all lack a trip (rt#51)
+	var unmatched []string  // lines whose buses all lack a trip (rt#51)
+	why := map[string]int{} // "line:reason" -> unmatched buses (rt#116)
 	for id, d := range a.lines {
 		if a.now().Sub(d.updated) > feedMaxAge {
 			continue
@@ -899,6 +900,8 @@ func (a *App) logStats() {
 		for i := range d.results {
 			if d.results[i].Matched() {
 				n++
+			} else {
+				why[id+":"+d.results[i].Why]++
 			}
 		}
 		if len(d.results) > 0 && n == 0 {
@@ -909,6 +912,11 @@ func (a *App) logStats() {
 	}
 	a.mu.RUnlock()
 	sort.Strings(unmatched)
+	whys := make([]string, 0, len(why))
+	for k, n := range why {
+		whys = append(whys, fmt.Sprintf("%s=%d", k, n))
+	}
+	sort.Strings(whys)
 	reqs := a.client.Requests()
 	osethReqs, osethErrs := int64(0), int64(0)
 	if a.oseth != nil {
@@ -918,7 +926,8 @@ func (a *App) logStats() {
 		"oseth_requests", osethReqs, "oseth_errors", osethErrs,
 		"watched", st.LinesByTier[sched.Watched], "dense", st.LinesByTier[sched.Dense], "other", st.LinesByTier[sched.Other],
 		"stretch_other", fmt.Sprintf("%.2f", st.Stretch[sched.Other]), "rps_now", fmt.Sprintf("%.2f", a.pacer.RPS()),
-		"vehicles", vehicles, "matched", matched, "unmatched_lines", strings.Join(unmatched, ","), "road_cells", a.roads.Cells())
+		"vehicles", vehicles, "matched", matched, "unmatched_lines", strings.Join(unmatched, ","),
+		"unmatched_why", strings.Join(whys, ","), "road_cells", a.roads.Cells())
 	a.lastRequests = reqs
 	a.warnErrors("telematics", a.client.Errors(), a.client.LastError(), &a.seenErrors)
 	if a.oseth != nil {
