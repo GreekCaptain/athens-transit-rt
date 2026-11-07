@@ -2,6 +2,7 @@ package railgeo
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/angelospk/athens-transit-rt/internal/geo"
@@ -97,6 +98,13 @@ func TestSuburban(t *testing.T) {
 	a := byID["6928c3c150ab5bc72b39cee5"]
 	if a.Name != "Αγ. Ανάργυροι" || a.En != "Ag. Anargyroi" || math.Abs(a.Lat-38.021858) > 1e-9 || len(a.Corridors) == 0 {
 		t.Fatalf("station %+v", a)
+	}
+	// Άγιος Γεώργιος: a halt of the CHALKIDA line between Καλοχώρι-Παντείχι and Δήλεσι (OSM node
+	// 10239183684), not the chapel on Lycabettus.
+	g := byID["6928c3c150ab5bc72b39cf4f"]
+	if g.Name != "Άγιος Γεώργιος" || math.Abs(g.Lat-38.354878) > 1e-6 || math.Abs(g.Lon-23.60738) > 1e-6 ||
+		strings.Join(cs[0].Stations[2:5], ",") != "6928c3c150ab5bc72b39cfe4,6928c3c150ab5bc72b39cf4f,6928c3c150ab5bc72b39cfe5" {
+		t.Fatalf("Άγιος Γεώργιος %+v, CHALKIDA %v", g, cs[0].Stations[:6])
 	}
 	for _, c := range cs {
 		for _, id := range c.Stations {
