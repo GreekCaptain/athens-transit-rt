@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -93,5 +94,46 @@ func TestRestoreDailyNoArchive(t *testing.T) {
 	}
 	if a.anyDailyCached(gtfs.Midnight(now)) {
 		t.Fatal("a line cached from another day's archive")
+	}
+}
+
+// A line with two line codes, restored from the archive: when one code answers and the other
+// fails, the partial answer may miss the failed code's runs, so the cache keeps its runs, adds the
+// new ones and asks again after the pause. An answer from both codes replaces them and completes
+// the line.
+func TestPartialFetchKeepsCachedRuns(t *testing.T) {
+	now := monday1020
+	a := appWithLines(t, func() time.Time { return now }, []telematics.Line{{LineCode: "R1", LineID: "608"}, {LineCode: "R2", LineID: "608"}},
+		map[string][]telematics.Route{"R1": {{RouteCode: "SH"}}, "R2": {{RouteCode: "SH2"}}})
+	today := gtfs.Midnight(now)
+	line := a.canonLine("608")
+	restored := telematics.DailySchedule{Descr: "A - B", Go: []string{"09:00", "09:30"}, Come: []string{"09:15", "09:45"}}
+	a.dailyMu.Lock()
+	a.dailyCache = map[string]dailyEntry{line: {day: today.Format(time.DateOnly), ok: true, partial: true, retry: now, d: restored}}
+	a.dailyMu.Unlock()
+
+	a.dailyBg = func(_ context.Context, code string) (telematics.DailySchedule, error) {
+		if code == "R2" {
+			return telematics.DailySchedule{}, errors.New("timeout")
+		}
+		return telematics.DailySchedule{Descr: "A - B", Go: []string{"09:00", "09:30", "10:00", "10:30"}}, nil
+	}
+	a.prefetchDailyOnce(context.Background())
+	e, ok := a.dailyEntryOf(line, today)
+	if !ok || !slices.Equal(e.d.Go, []string{"09:00", "09:30", "10:00", "10:30"}) || !slices.Equal(e.d.Come, restored.Come) ||
+		!e.partial || !now.Before(e.retry) {
+		t.Fatalf("after a partial fetch %+v, %v", e, ok)
+	}
+
+	now = now.Add(dailyNegativeTTL)
+	a.dailyBg = func(_ context.Context, code string) (telematics.DailySchedule, error) {
+		if code == "R2" {
+			return telematics.DailySchedule{Descr: "A - B", Come: []string{"09:15"}}, nil
+		}
+		return telematics.DailySchedule{Descr: "A - B", Go: []string{"09:00", "10:00"}}, nil
+	}
+	a.prefetchDailyOnce(context.Background())
+	if e, ok := a.dailyEntryOf(line, today); !ok || e.partial || len(e.d.Go) != 2 || len(e.d.Come) != 1 {
+		t.Fatalf("after a full fetch %+v, %v", e, ok)
 	}
 }
