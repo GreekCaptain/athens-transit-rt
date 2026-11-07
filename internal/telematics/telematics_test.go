@@ -131,8 +131,12 @@ func TestClientHTTPError(t *testing.T) {
 		http.Error(w, "down", http.StatusBadGateway)
 	}))
 	defer srv.Close()
-	if _, err := New(srv.URL+"/", nil).Lines(context.Background()); err == nil {
+	c := New(srv.URL+"/", nil)
+	if _, err := c.Lines(context.Background()); err == nil {
 		t.Fatal("502 not reported")
+	}
+	if got := c.LastError(); got != "webGetLines: HTTP 502" {
+		t.Fatalf("last error %q", got)
 	}
 }
 

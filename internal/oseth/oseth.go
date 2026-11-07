@@ -58,6 +58,7 @@ type Client struct {
 
 	requests atomic.Int64
 	errors   atomic.Int64
+	lastErr  atomic.Pointer[string]
 }
 
 // New builds a client of baseURL paced at rps requests per second.
@@ -78,6 +79,14 @@ func (c *Client) Requests() int64 { return c.requests.Load() }
 
 // Errors counts failed calls (transport, HTTP status, error answers).
 func (c *Client) Errors() int64 { return c.errors.Load() }
+
+// LastError is the text of the newest counted failure ("" before the first one).
+func (c *Client) LastError() string {
+	if e := c.lastErr.Load(); e != nil {
+		return *e
+	}
+	return ""
+}
 
 // flex decodes a JSON string or number into a string (the API is not consistent).
 type flex string
@@ -133,6 +142,8 @@ func (c *Client) RouteVehicles(ctx context.Context, routeID, shapeID string) ([]
 	c.Pacer.Report(time.Since(start), err)
 	if err != nil {
 		c.errors.Add(1)
+		s := err.Error()
+		c.lastErr.Store(&s)
 	}
 	return vs, err
 }

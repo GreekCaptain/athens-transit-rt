@@ -128,6 +128,7 @@ type Client struct {
 	lastWrite   time.Time     // end of the last request write, guarded by gapMu
 	requests    atomic.Int64
 	errors      atomic.Int64
+	lastErr     atomic.Pointer[string]
 }
 
 func New(baseURL string, pacer *Pacer) *Client {
@@ -211,6 +212,20 @@ func (g *gapTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // Errors counts failed calls (transport, HTTP status, error answers, undecodable bodies).
 func (c *Client) Errors() int64 { return c.errors.Load() }
 
+// LastError is the text of the newest counted failure ("" before the first one).
+func (c *Client) LastError() string {
+	if e := c.lastErr.Load(); e != nil {
+		return *e
+	}
+	return ""
+}
+
+func (c *Client) noteError(err error) {
+	c.errors.Add(1)
+	s := err.Error()
+	c.lastErr.Store(&s)
+}
+
 // Call performs one request and decodes the JSON answer into out. "No data" answers (empty
 // body, "" or null) leave out untouched.
 func (c *Client) Call(ctx context.Context, out any, act string, params ...string) error {
@@ -226,7 +241,7 @@ func (c *Client) Call(ctx context.Context, out any, act string, params ...string
 	start := time.Now()
 	err := c.do(ctx, out, act, c.BaseURL+"?"+q.Encode())
 	if err != nil {
-		c.errors.Add(1)
+		c.noteError(err)
 	}
 	if c.Pacer != nil {
 		c.Pacer.Report(time.Since(start), err)

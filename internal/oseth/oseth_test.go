@@ -49,8 +49,15 @@ func TestRouteVehiclesErrorBody(t *testing.T) {
 		w.Write([]byte(`{"data":"","error":"not found","status_code":404}`))
 	}))
 	defer srv.Close()
-	if _, err := New(srv.URL, 100).RouteVehicles(context.Background(), "x", "1"); err == nil {
+	c := New(srv.URL, 100)
+	if c.LastError() != "" {
+		t.Fatal("last error before any call")
+	}
+	if _, err := c.RouteVehicles(context.Background(), "x", "1"); err == nil {
 		t.Fatal("want an error for status_code 404 in the body")
+	}
+	if got := c.LastError(); got != "route x: status 404 not found" {
+		t.Fatalf("last error %q", got)
 	}
 }
 

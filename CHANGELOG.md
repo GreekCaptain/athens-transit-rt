@@ -16,6 +16,9 @@ for self-hosting. API reference: [docs/API.md](docs/API.md), OpenAPI 3.1:
   `start_delay_s` ([#72](https://github.com/angelospk/athens-transit-rt/issues/72)).
 
 ### Live API
+- The minute stats log adds an `upstream errors` warning when new upstream errors happened:
+  the source (`telematics` or `oseth`), how many, and the text of the last one. Before, only
+  the counters showed, without the cause.
 - Vehicles of `/v1/lines/{id}`, `/v1/vehicles` and `z` 13 tiles get `along_m` (contract rev 20):
   whole metres along the static shape of their `variant`, and each variant of
   `static/v1/lines/{line}.json` gets `length_m`. Clients can then move a marker along the whole

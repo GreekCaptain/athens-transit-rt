@@ -535,3 +535,25 @@ func TestTelematicsThroughProxy(t *testing.T) {
 		t.Fatalf("err %v proxied %d", err, proxied.Load())
 	}
 }
+
+// The minute stats log says where new upstream errors come from and what the last one said,
+// so a failure shows its cause in the log; a minute without new errors adds no line.
+func TestStatsLogWarnsOnNewUpstreamErrors(t *testing.T) {
+	a := newApp(t, monday1020)
+	var logs strings.Builder
+	a.log = slog.New(slog.NewTextHandler(&logs, nil))
+	var seen int64
+	a.warnErrors("oseth", 3, "route 87P: HTTP 500", &seen)
+	if s := logs.String(); !strings.Contains(s, `level=WARN msg="upstream errors" source=oseth new=3 total=3 last="route 87P: HTTP 500"`) {
+		t.Fatalf("log: %s", s)
+	}
+	logs.Reset()
+	a.warnErrors("oseth", 3, "route 87P: HTTP 500", &seen)
+	if logs.Len() != 0 {
+		t.Fatalf("no new errors, still logged: %s", logs.String())
+	}
+	a.warnErrors("oseth", 5, "route 01: timeout", &seen)
+	if s := logs.String(); !strings.Contains(s, "new=2 total=5") {
+		t.Fatalf("log: %s", s)
+	}
+}

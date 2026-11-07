@@ -119,6 +119,8 @@ type App struct {
 	lastOK       time.Time
 	warnedDay    string
 	lastRequests int64
+	seenErrors   int64 // upstream errors already reported by warnErrors
+	seenOSETH    int64
 
 	rtMu    sync.Mutex
 	rtBuilt time.Time
@@ -918,6 +920,19 @@ func (a *App) logStats() {
 		"stretch_other", fmt.Sprintf("%.2f", st.Stretch[sched.Other]), "rps_now", fmt.Sprintf("%.2f", a.pacer.RPS()),
 		"vehicles", vehicles, "matched", matched, "unmatched_lines", strings.Join(unmatched, ","), "road_cells", a.roads.Cells())
 	a.lastRequests = reqs
+	a.warnErrors("telematics", a.client.Errors(), a.client.LastError(), &a.seenErrors)
+	if a.oseth != nil {
+		a.warnErrors("oseth", osethErrs, a.oseth.LastError(), &a.seenOSETH)
+	}
+}
+
+// warnErrors logs once a minute where new upstream errors come from and what the last one said
+// (the counters alone hide the cause). Error texts carry the act and status, never the salt.
+func (a *App) warnErrors(source string, total int64, last string, seen *int64) {
+	if total > *seen {
+		a.log.Warn("upstream errors", "source", source, "new", total-*seen, "total", total, "last", last)
+	}
+	*seen = total
 }
 
 // forget drops lines not polled for a while and old matcher state.

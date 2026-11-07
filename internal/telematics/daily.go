@@ -43,7 +43,7 @@ func (c *Client) DailySchedule(ctx context.Context, lineCode string) (DailySched
 	start := time.Now()
 	err := c.do(ctx, &raw, act, c.BaseURL+"?act="+act+"&line_code="+url.QueryEscape(lineCode))
 	if err != nil {
-		c.errors.Add(1)
+		c.noteError(err)
 	}
 	if c.Pacer != nil {
 		c.Pacer.Report(time.Since(start), err)
