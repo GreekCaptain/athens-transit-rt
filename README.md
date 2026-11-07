@@ -1,9 +1,26 @@
-# athens-transit-rt
+# staseis-rt
 
-Live positions and GTFS-Realtime for OASA buses and trolleys in Athens, in Go.
+Live bus positions, arrival times and GTFS-Realtime for Greek cities, in Go. It is the backend of
+[staseis.gr](https://staseis.gr) (web: [athens-transit-map](https://github.com/angelospk/athens-transit-map),
+Android: [athens-transit-app](https://github.com/angelospk/athens-transit-app)). Until 2026-11 the repo was
+named `athens-transit-rt`; the Go module path and the image name `ghcr.io/angelospk/athens-transit-rt` keep that name.
+
+## Cities
+
+One binary (`atrt`) serves every city. Each large city runs as its own instance (`atrt serve --city <id>`), so a
+problem in one city never stops another. Adding a city: an entry in `internal/server/city.go`, plus a source
+adapter only when its live API is of a new kind.
+
+| City | `--city` | Live sources | Public instance |
+| --- | --- | --- | --- |
+| Athens | `athens` (default) | OASA telematics (buses, trolleys), STASY timetable (metro, tram), railway.gov.gr (Proastiakos) | `https://transit.haroldpoi.dev` |
+| Thessaloniki | `thessaloniki` | OASTH telematics (primary), OSETH (second vehicle source); GTFS from data.gov.gr | `https://transit-thess.haroldpoi.dev` |
+| 28 citybus.gr cities | `citybus` (one process, one path per city) | citybus.gr stop boards | not public yet ([#106](https://github.com/angelospk/athens-transit-rt/pull/106)) |
+
+The rest of this page describes the Athens instance, the first and largest one.
 
 **Public API, no key:** `https://transit.haroldpoi.dev`. **API reference (try it in the browser):**
-<https://angelospk.github.io/athens-transit-rt/> (short link: [bus.haroldpoi.dev/api](https://bus.haroldpoi.dev/api);
+<https://angelospk.github.io/staseis-rt/> (short link: [bus.haroldpoi.dev/api](https://bus.haroldpoi.dev/api);
 OpenAPI 3.1: [`docs/openapi/openapi.yaml`](docs/openapi/openapi.yaml)).
 
 This is a Go port of [foivospro/athens-gtfs-realtime](https://github.com/foivospro/athens-gtfs-realtime)
@@ -11,7 +28,8 @@ by Foivos Proestakis (MIT). The matching logic, constants and tools follow upstr
 ported upstream commit is in [`UPSTREAM.md`](UPSTREAM.md). Upstream's HTML viewer and `/events`
 stream are not ported: the map lives in [athens-transit-map](https://github.com/angelospk/athens-transit-map).
 
-> **Ελληνικά, σύντομα.** Ένα Go binary (`atrt`) ρωτά το API τηλεματικής του ΟΑΣΑ για όλο το
+> **Ελληνικά, σύντομα.** Το backend του staseis.gr για Αθήνα, Θεσσαλονίκη και (σύντομα) τις πόλεις του
+> citybus.gr: ένα instance ανά μεγάλη πόλη. Για την Αθήνα, ένα Go binary (`atrt`) ρωτά το API τηλεματικής του ΟΑΣΑ για όλο το
 > δίκτυο, με ένα κοινό όριο αιτημάτων (6/s, max 6), αντιστοιχίζει κάθε όχημα σε δρομολόγιο του
 > GTFS και δίνει JSON ανά γραμμή (`/v1/lines/040`) και GTFS-Realtime. Οι χρήστες δεν φτάνουν
 > ποτέ στον ΟΑΣΑ: το Cloudflare κρατά κάθε απάντηση ακριβώς μέχρι την επόμενη ανανέωση της
@@ -31,7 +49,7 @@ stream are not ported: the map lives in [athens-transit-map](https://github.com/
   and derives a smoothed `speed` and the `path` ahead, so a map can move buses between updates.
 - Serves the live API of [`docs/CONTRACT.md`](docs/CONTRACT.md) and whole-network
   GTFS-Realtime VehiclePositions and TripUpdates (`.pb` and `.json`). Public instance and
-  usage: [API reference](https://angelospk.github.io/athens-transit-rt/),
+  usage: [API reference](https://angelospk.github.io/staseis-rt/),
   [`docs/API.md`](docs/API.md). The feeds pass the MobilityData GTFS Realtime validator
   with 0 errors ([details](docs/API.md#validation)).
 - Line timetables (`/v1/lines/{id}/schedule`): today from OASA's daily schedule, prefetched once a
@@ -51,7 +69,7 @@ stream are not ported: the map lives in [athens-transit-map](https://github.com/
 ## Use the public instance
 
 Base URL `https://transit.haroldpoi.dev`, no key. Reference with try-it:
-<https://angelospk.github.io/athens-transit-rt/>, details in [`docs/API.md`](docs/API.md).
+<https://angelospk.github.io/staseis-rt/>, details in [`docs/API.md`](docs/API.md).
 
 ```bash
 curl -s https://transit.haroldpoi.dev/v1/lines/040                # live buses of a line
@@ -204,7 +222,7 @@ on a VPS whose address is in Greece; check first with
 JSON when OASA answers.
 
 ```bash
-curl -O https://raw.githubusercontent.com/angelospk/athens-transit-rt/main/compose.yaml
+curl -O https://raw.githubusercontent.com/angelospk/staseis-rt/main/compose.yaml
 docker compose up -d
 curl -s 127.0.0.1:8095/v1/status
 ```
@@ -251,7 +269,7 @@ Use it only on a host that can reach OASA. Both listeners are on 127.0.0.1 only.
 | `upstream-watch` | daily | compare `UPSTREAM.md` with upstream `main`; open one issue per new upstream head |
 | `live-check` | daily 08:23 UTC, manual | `scripts/check-openapi-live.py` against the public instance (every endpoint, strict schemas, /v2 data rules); a failure opens or comments on the `live-check` issue, a pass closes it |
 
-Static data: <https://angelospk.github.io/athens-transit-rt/static/v1/lines.json>.
+Static data: <https://angelospk.github.io/staseis-rt/static/v1/lines.json>.
 API docs: the same Pages site serves `docs/openapi/` at its root. Check the spec against the
 live servers with `uv run scripts/check-openapi-live.py` (every endpoint, strict schemas), and
 lint it with `npx @redocly/cli lint docs/openapi/openapi.yaml`.
