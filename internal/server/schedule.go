@@ -189,7 +189,14 @@ func (a *App) dailyVia(ctx context.Context, line string, today time.Time, get da
 	if a.dailyCache == nil {
 		a.dailyCache = map[string]dailyEntry{}
 	}
-	if old, ok := a.dailyCache[line]; !ok || old.day <= c.e.day { // never yesterday's over today's
+	switch old, ok := a.dailyCache[line]; {
+	case ok && old.day > c.e.day: // never yesterday's over today's
+	case ok && old.day == c.e.day && old.ok && !c.e.ok:
+		// OASA gave nothing (down, or no answer in time): keep the runs the cache has (a partial
+		// schedule, or one restored from the archive) and ask again after the same pause.
+		old.retry = c.e.retry
+		a.dailyCache[line], c.e = old, old
+	default:
 		a.dailyCache[line] = c.e
 	}
 	delete(a.dailyCalls, line)
